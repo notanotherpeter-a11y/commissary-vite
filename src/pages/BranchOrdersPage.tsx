@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
+import { API_BASE } from '@/lib/api'
 import { PageHeader } from '@/components/page-header'
 import { KpiCard } from '@/components/kpi-card'
 import { formatDate, MONTHS, getCurrentMonthYear } from '@/lib/utils'
@@ -66,9 +67,13 @@ export function BranchOrdersPage() {
   async function handleAction(order: BranchOrder, action: 'approve' | 'reject') {
     setProcessing(order.id)
     try {
-      const res = await fetch(`/api/orders/${action}`, {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch(`${API_BASE}/api/orders/${action}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
         body: JSON.stringify({ orderId: order.id }),
       })
       const json = await res.json()

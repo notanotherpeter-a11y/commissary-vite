@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
+import { API_BASE } from '@/lib/api'
 import { useAuth } from '@/lib/auth-context'
 import { PageHeader } from '@/components/page-header'
 import { KpiCard } from '@/components/kpi-card'
@@ -40,9 +41,13 @@ export function BranchPage() {
   }, [slug])
 
   async function approveOrder(orderId: string, action: 'approve' | 'reject') {
-    const res = await fetch(`/api/orders/${action}`, {
+    const { data: { session } } = await supabase.auth.getSession()
+    const res = await fetch(`${API_BASE}/api/orders/${action}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+      },
       body: JSON.stringify({ orderId }),
     })
     const result = await res.json()

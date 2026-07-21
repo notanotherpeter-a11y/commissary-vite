@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
+import { API_BASE } from '@/lib/api'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -47,9 +48,13 @@ export function ItemListModal({ onClose }: Props) {
     if (adjust.mode === 'add' && (!price || price <= 0)) { toast.error('Enter a valid price'); return }
     setSaving(true)
     try {
-      const res = await fetch('/api/inventory/adjust', {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch(`${API_BASE}/api/inventory/adjust`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
         body: JSON.stringify({ inventoryId: item.id, mode: adjust.mode, amount, ...(adjust.mode === 'add' ? { price } : {}) }),
       })
       const json = await res.json()
