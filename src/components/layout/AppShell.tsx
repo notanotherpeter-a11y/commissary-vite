@@ -1,12 +1,13 @@
-import { Outlet, NavLink, useNavigate } from 'react-router-dom'
+import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '@/lib/auth-context'
 import {
   LayoutDashboard, TrendingUp, Store, ShoppingBag,
   Receipt, Users, Package, Wallet, BarChart3,
-  Settings, Bell, Building2, LogOut, Menu
+  Settings, Bell, Building2, LogOut, Menu, ChevronDown, ChevronRight
 } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
+import { supabase } from '@/lib/supabase'
 
 const NAV_ITEMS = [
   { label: 'Dashboard',       path: '/dashboard',     icon: LayoutDashboard, roles: ['admin', 'investor'] },
@@ -22,12 +23,39 @@ const NAV_ITEMS = [
   { label: 'Settings',        path: '/settings',       icon: Settings,        roles: ['admin'] },
 ]
 
+interface Branch {
+  slug: string
+  name: string
+}
+
 export function AppShell() {
   const { role, user, signOut } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [branchesOpen, setBranchesOpen] = useState(false)
+  const [branches, setBranches] = useState<Branch[]>([])
 
   const visibleNav = NAV_ITEMS.filter(item => role && item.roles.includes(role))
+  const isAdminOrInvestor = role === 'admin' || role === 'investor'
+
+  useEffect(() => {
+    if (!isAdminOrInvestor) return
+    supabase
+      .from('branches')
+      .select('slug, name')
+      .order('name')
+      .then(({ data }) => {
+        if (data) setBranches(data as Branch[])
+      })
+  }, [isAdminOrInvestor])
+
+  // Auto-open branches section when on a branch page
+  useEffect(() => {
+    if (location.pathname.startsWith('/branches/')) {
+      setBranchesOpen(true)
+    }
+  }, [location.pathname])
 
   async function handleSignOut() {
     await signOut()
@@ -47,7 +75,7 @@ export function AppShell() {
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-0.5">
-        {/* Branch links */}
+        {/* Branch user: My Branch link */}
         {role === 'branch' && (
           <NavLink
             to={`/branches/${user?.user_metadata?.branch}`}
@@ -61,6 +89,7 @@ export function AppShell() {
             My Branch
           </NavLink>
         )}
+
         {visibleNav.map(item => {
           const Icon = item.icon
           return (
@@ -78,6 +107,45 @@ export function AppShell() {
             </NavLink>
           )
         })}
+
+        {/* Branches collapsible (admin / investor) */}
+        {isAdminOrInvestor && (
+          <div>
+            <button
+              onClick={() => setBranchesOpen(v => !v)}
+              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+            >
+              <Building2 className="w-4 h-4 shrink-0" />
+              <span className="flex-1 text-left">Branches</span>
+              {branchesOpen
+                ? <ChevronDown className="w-3.5 h-3.5" />
+                : <ChevronRight className="w-3.5 h-3.5" />}
+            </button>
+            {branchesOpen && (
+              <div className="ml-7 mt-0.5 space-y-0.5">
+                {branches.map(branch => {
+                  const path = `/branches/${branch.slug}`
+                  const isActive = location.pathname === path
+                  return (
+                    <NavLink
+                      key={branch.slug}
+                      to={path}
+                      onClick={() => setMobileOpen(false)}
+                      className={cn(
+                        'block px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
+                        isActive
+                          ? 'bg-amber-50 text-amber-600'
+                          : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+                      )}
+                    >
+                      {branch.name}
+                    </NavLink>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </nav>
 
       {/* User + sign out */}
