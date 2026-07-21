@@ -44,6 +44,7 @@ export function AppShell() {
     supabase
       .from('branches')
       .select('slug, name')
+      .neq('id', 6)
       .order('name')
       .then(({ data }) => {
         if (data) setBranches(data as Branch[])
