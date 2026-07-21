@@ -15,7 +15,7 @@ app.use(
   '/api/*',
   cors({
     origin: ['https://www.kamayanresto.com', 'http://localhost:5173'],
-    allowMethods: ['POST', 'OPTIONS'],
+    allowMethods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
     allowHeaders: ['Content-Type', 'Authorization'],
   })
 )
@@ -253,6 +253,106 @@ app.post('/api/inventory/adjust', async (c) => {
     newQty,
     message: `${mode === 'add' ? '+' : '-'}${amount} ${item.unit} — ${item.name}`,
   })
+})
+
+// GET /api/admin/list-users
+app.get('/api/admin/list-users', async (c) => {
+  const auth = await verifyAdmin(c.req.header('Authorization'), c.env)
+  if (!auth) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { data, error } = await adminDb(c.env).auth.admin.listUsers()
+  if (error) return c.json({ error: error.message }, 500)
+
+  const users = (data?.users ?? []).map((u: { id: string; email?: string; user_metadata?: Record<string, unknown> }) => ({
+    id: u.id,
+    email: u.email ?? '',
+    role: u.user_metadata?.role ?? null,
+    branch: u.user_metadata?.branch ?? null,
+  }))
+
+  return c.json({ users })
+})
+
+// POST /api/admin/update-password
+app.post('/api/admin/update-password', async (c) => {
+  const auth = await verifyAdmin(c.req.header('Authorization'), c.env)
+  if (!auth) return c.json({ error: 'Unauthorized' }, 401)
+
+  const body = await c.req.json()
+  const { userId, password } = body
+  if (!userId) return c.json({ error: 'userId is required' }, 400)
+  if (!password || password.length < 6) return c.json({ error: 'Password must be at least 6 characters' }, 400)
+
+  const { error } = await adminDb(c.env).auth.admin.updateUserById(userId, { password })
+  if (error) return c.json({ error: error.message }, 500)
+
+  return c.json({ success: true })
+})
+
+// POST /api/admin/update-role
+app.post('/api/admin/update-role', async (c) => {
+  const auth = await verifyAdmin(c.req.header('Authorization'), c.env)
+  if (!auth) return c.json({ error: 'Unauthorized' }, 401)
+
+  const body = await c.req.json()
+  const { userId, role } = body
+  const validRoles = ['admin', 'investor', 'branch']
+  if (!userId) return c.json({ error: 'userId is required' }, 400)
+  if (!role || !validRoles.includes(role)) return c.json({ error: 'Invalid role' }, 400)
+
+  const { error } = await adminDb(c.env).auth.admin.updateUserById(userId, { user_metadata: { role } })
+  if (error) return c.json({ error: error.message }, 500)
+
+  return c.json({ success: true })
+})
+
+// POST /api/admin/create-user
+app.post('/api/admin/create-user', async (c) => {
+  const auth = await verifyAdmin(c.req.header('Authorization'), c.env)
+  if (!auth) return c.json({ error: 'Unauthorized' }, 401)
+
+  const body = await c.req.json()
+  const { email, password, role, branch } = body
+  if (!email) return c.json({ error: 'email is required' }, 400)
+  if (!password || password.length < 6) return c.json({ error: 'Password must be at least 6 characters' }, 400)
+  if (!role) return c.json({ error: 'role is required' }, 400)
+
+  const userMeta: Record<string, unknown> = { role }
+  if (role === 'branch' && branch) userMeta.branch = branch
+
+  const { data, error } = await adminDb(c.env).auth.admin.createUser({
+    email,
+    password,
+    user_metadata: userMeta,
+    email_confirm: true,
+  })
+  if (error) return c.json({ error: error.message }, 500)
+
+  const u = data.user
+  return c.json({
+    user: {
+      id: u.id,
+      email: u.email ?? email,
+      role,
+      branch: branch ?? null,
+    },
+  })
+})
+
+// DELETE /api/admin/delete-user
+app.delete('/api/admin/delete-user', async (c) => {
+  const auth = await verifyAdmin(c.req.header('Authorization'), c.env)
+  if (!auth) return c.json({ error: 'Unauthorized' }, 401)
+
+  const body = await c.req.json()
+  const { userId } = body
+  if (!userId) return c.json({ error: 'userId is required' }, 400)
+  if (userId === auth.user.id) return c.json({ error: 'Cannot delete your own account' }, 400)
+
+  const { error } = await adminDb(c.env).auth.admin.deleteUser(userId)
+  if (error) return c.json({ error: error.message }, 500)
+
+  return c.json({ success: true })
 })
 
 export default app

@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react'
+import { API_BASE } from '@/lib/api'
+import { supabase } from '@/lib/supabase'
 import { PageHeader } from '@/components/page-header'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -87,9 +89,14 @@ export function SettingsPage() {
   }
 
   useEffect(() => {
-    fetch('/api/admin/list-users')
-      .then(r => r.json())
-      .then(d => {
+    ;(async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        const token = session?.access_token
+        const r = await fetch(`${API_BASE}/api/admin/list-users`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        const d = await r.json()
         if (d.users) {
           const sorted = sortUsers(d.users)
           const seen = new Set<string>()
@@ -101,8 +108,10 @@ export function SettingsPage() {
           })
           setUsers(deduped)
         }
-      })
-      .finally(() => setLoading(false))
+      } finally {
+        setLoading(false)
+      }
+    })()
   }, [])
 
   function openEdit(u: AuthUser) {
@@ -117,9 +126,11 @@ export function SettingsPage() {
     if (password.length < 6) { toast.error('Password must be at least 6 characters'); return }
     if (password !== confirm) { toast.error('Passwords do not match'); return }
     setSaving(true)
-    const res = await fetch('/api/admin/update-password', {
+    const { data: { session } } = await supabase.auth.getSession()
+    const token = session?.access_token
+    const res = await fetch(`${API_BASE}/api/admin/update-password`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({ userId: editing.id, password }),
     })
     const data = await res.json()
@@ -139,22 +150,34 @@ export function SettingsPage() {
     setAddOpen(true)
   }
 
-  function handleAdd() {
+  async function handleAdd() {
     if (!newUsername.trim()) { toast.error('Username is required'); return }
     if (newRole === 'branch' && !newBranch.trim()) { toast.error('Branch name is required'); return }
     if (newPassword.length < 6) { toast.error('Password must be at least 6 characters'); return }
     if (newPassword !== newConfirm) { toast.error('Passwords do not match'); return }
 
     const email = `${newUsername.trim()}${newDomain}`
-    const newUser: AuthUser = {
-      id: `temp-${Date.now()}`,
-      email,
-      role: newRole,
-      branch: newRole === 'branch' ? newBranch.trim() : null,
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+      const res = await fetch(`${API_BASE}/api/admin/create-user`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          email,
+          password: newPassword,
+          role: newRole,
+          branch: newRole === 'branch' ? newBranch.trim() : undefined,
+        }),
+      })
+      const data = await res.json()
+      if (data.error) { toast.error('Failed: ' + data.error); return }
+      setUsers(prev => sortUsers([...prev, data.user as AuthUser]))
+      toast.success(`User ${email} added`)
+      setAddOpen(false)
+    } catch {
+      toast.error('Failed to create user')
     }
-    setUsers(prev => sortUsers([...prev, newUser]))
-    toast.success(`User ${email} added`)
-    setAddOpen(false)
   }
 
   function openDelete(u: AuthUser) {
@@ -162,11 +185,24 @@ export function SettingsPage() {
     setConfirmDelete('')
   }
 
-  function handleDelete() {
+  async function handleDelete() {
     if (!deleting) return
-    setUsers(prev => prev.filter(u => u.id !== deleting.id))
-    toast.success(`User ${deleting.email} removed`)
-    setDeleting(null)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+      const res = await fetch(`${API_BASE}/api/admin/delete-user`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ userId: deleting.id }),
+      })
+      const data = await res.json()
+      if (data.error) { toast.error('Failed: ' + data.error); return }
+      setUsers(prev => prev.filter(u => u.id !== deleting.id))
+      toast.success(`User ${deleting.email} removed`)
+      setDeleting(null)
+    } catch {
+      toast.error('Failed to delete user')
+    }
   }
 
   return (
