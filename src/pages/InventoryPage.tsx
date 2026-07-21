@@ -16,6 +16,8 @@ import { ItemListModal } from '@/components/modals/ItemListModal'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 
+type TabView = 'stock' | 'cost'
+
 export function InventoryPage() {
   const { role, branch: userBranchSlug } = useAuth()
   const userMeta = { role: role ?? 'branch', branch: userBranchSlug }
@@ -24,6 +26,7 @@ export function InventoryPage() {
   const [search, setSearch] = useState('')
   const [view, setView] = useState<'table' | 'card'>('table')
   const [loading, setLoading] = useState(true)
+  const [tab, setTab] = useState<TabView>('stock')
   const [showAdd, setShowAdd] = useState(false)
   const [editing, setEditing] = useState<InventoryItem | null>(null)
   const [historyItem, setHistoryItem] = useState<(InventoryItem & { branches?: { name: string } }) | null>(null)
@@ -66,6 +69,11 @@ export function InventoryPage() {
   const filtered = items.filter(i => i.name.toLowerCase().includes(search.toLowerCase()) || i.category.toLowerCase().includes(search.toLowerCase()))
   const lowStock = filtered.filter(i => Number(i.quantity) < Number(i.min_quantity))
 
+  // Cost tab computed values
+  const itemsWithPrice = items.filter(i => Number(i.price) > 0)
+  const totalStockValue = items.reduce((sum, i) => sum + Number(i.price ?? 0) * Number(i.quantity ?? 0), 0)
+  const costSorted = [...items].sort((a, b) => (Number(b.price ?? 0) * Number(b.quantity ?? 0)) - (Number(a.price ?? 0) * Number(a.quantity ?? 0)))
+
   return (
     <div>
       <PageHeader
@@ -90,6 +98,29 @@ export function InventoryPage() {
         }
       />
 
+      {/* Tabs */}
+      <div className="flex gap-1 mb-5 border-b border-slate-200">
+        {([
+          { label: 'Stock', value: 'stock' as TabView },
+          { label: 'Items Cost', value: 'cost' as TabView },
+        ]).map(t => (
+          <button
+            key={t.value}
+            onClick={() => setTab(t.value)}
+            className={cn(
+              'px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
+              tab === t.value
+                ? 'border-amber-500 text-amber-600'
+                : 'border-transparent text-slate-500 hover:text-slate-700'
+            )}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'stock' && (
+      <>
       {isAdmin && lowStock.length > 0 && (
         <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2">
           <AlertTriangle className="w-4 h-4 text-red-600 flex-shrink-0" />
@@ -199,6 +230,76 @@ export function InventoryPage() {
             )
           })}
         </div>
+      )}
+
+      </>
+      )}
+
+      {tab === 'cost' && (
+        <>
+          {/* KPI row */}
+          <div className="grid grid-cols-3 gap-3 mb-6">
+            <div className="bg-white rounded-lg border p-4">
+              <p className="text-xs text-slate-500 mb-1">Total Stock Value</p>
+              <p className="text-xl font-bold text-amber-600">₱{totalStockValue.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</p>
+            </div>
+            <div className="bg-white rounded-lg border p-4">
+              <p className="text-xs text-slate-500 mb-1">Total Items</p>
+              <p className="text-xl font-bold text-slate-800">{items.length}</p>
+            </div>
+            <div className="bg-white rounded-lg border p-4">
+              <p className="text-xs text-slate-500 mb-1">Priced Items</p>
+              <p className="text-xl font-bold text-slate-800">{itemsWithPrice.length}</p>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg border overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-slate-50">
+                  <TableHead>Item</TableHead>
+                  <TableHead>Category</TableHead>
+                  <TableHead className="text-right">Qty</TableHead>
+                  <TableHead>Unit</TableHead>
+                  <TableHead className="text-right">Unit Price</TableHead>
+                  <TableHead className="text-right">Total Value</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {loading ? (
+                  <TableRow><TableCell colSpan={6} className="text-center py-8 text-slate-500">Loading…</TableCell></TableRow>
+                ) : costSorted.length === 0 ? (
+                  <TableRow><TableCell colSpan={6} className="text-center py-8 text-slate-500">No items.</TableCell></TableRow>
+                ) : costSorted.map(item => {
+                  const unitPrice = Number(item.price ?? 0)
+                  const qty = Number(item.quantity ?? 0)
+                  const totalValue = unitPrice * qty
+                  return (
+                    <TableRow key={item.id}>
+                      <TableCell className="font-medium">{item.name}</TableCell>
+                      <TableCell><Badge variant="secondary">{item.category}</Badge></TableCell>
+                      <TableCell className="text-right">{item.quantity}</TableCell>
+                      <TableCell className="text-sm text-slate-500">{item.unit}</TableCell>
+                      <TableCell className="text-right text-slate-700">
+                        {unitPrice > 0 ? `₱${unitPrice.toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '—'}
+                      </TableCell>
+                      <TableCell className="text-right font-semibold text-slate-900">
+                        {totalValue > 0 ? `₱${totalValue.toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '—'}
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+                {/* Grand total row */}
+                <TableRow className="bg-amber-50 border-t-2 border-amber-200">
+                  <TableCell colSpan={5} className="font-bold text-slate-800">Grand Total</TableCell>
+                  <TableCell className="text-right font-bold text-amber-700 text-base">
+                    ₱{totalStockValue.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                  </TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+          </div>
+        </>
       )}
 
       {(showAdd || editing) && (
