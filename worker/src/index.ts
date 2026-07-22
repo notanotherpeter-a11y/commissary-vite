@@ -355,4 +355,45 @@ app.delete('/api/admin/delete-user', async (c) => {
   return c.json({ success: true })
 })
 
+// DELETE /api/admin/clear-month-data
+// Body: { year: number, month: number, tables: string[] }
+// Clears transactional data for the given month across selected tables
+app.delete('/api/admin/clear-month-data', async (c) => {
+  const auth = await verifyAdmin(c.req.header('Authorization'), c.env)
+  if (!auth) return c.json({ error: 'Unauthorized' }, 401)
+
+  const body = await c.req.json()
+  const { year, month, tables } = body as { year: number; month: number; tables: string[] }
+
+  if (!year || !month || !tables || !tables.length) {
+    return c.json({ error: 'year, month and tables are required' }, 400)
+  }
+
+  const ALLOWED_TABLES = ['sales', 'expenses', 'branch_orders', 'salary_payments', 'receivables', 'inventory_logs']
+  const invalid = tables.filter((t: string) => !ALLOWED_TABLES.includes(t))
+  if (invalid.length) return c.json({ error: `Invalid tables: ${invalid.join(', ')}` }, 400)
+
+  const db = adminDb(c.env)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const lastDay = new Date(year, month, 0).getDate()
+  const start = `${year}-${pad(month)}-01`
+  const end   = `${year}-${pad(month)}-${lastDay}`
+
+  const results: Record<string, number> = {}
+
+  for (const table of tables) {
+    const dateCol = table === 'inventory_logs' ? 'created_at' : 'date'
+    const { count, error } = await db
+      .from(table)
+      .delete({ count: 'exact' })
+      .gte(dateCol, table === 'inventory_logs' ? `${start}T00:00:00` : start)
+      .lte(dateCol, table === 'inventory_logs' ? `${end}T23:59:59` : end)
+    if (error) return c.json({ error: `Failed on ${table}: ${error.message}` }, 500)
+    results[table] = count ?? 0
+  }
+
+  const total = Object.values(results).reduce((s, n) => s + n, 0)
+  return c.json({ success: true, deleted: results, total })
+})
+
 export default app

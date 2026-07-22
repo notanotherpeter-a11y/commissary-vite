@@ -9,8 +9,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Pencil, Loader2, Eye, EyeOff } from 'lucide-react'
+import { Pencil, Loader2, Eye, EyeOff, Trash2, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
+import { MONTHS } from '@/lib/utils'
 
 interface AuthUser {
   id: string
@@ -68,6 +69,51 @@ export function SettingsPage() {
 
   const [deleting, setDeleting] = useState<AuthUser | null>(null)
   const [confirmDelete, setConfirmDelete] = useState('')
+
+  // Clear month data
+  const now = new Date()
+  const [clearYear, setClearYear] = useState(now.getFullYear())
+  const [clearMonth, setClearMonth] = useState(now.getMonth() + 1)
+  const [clearTables, setClearTables] = useState<string[]>(['sales', 'expenses', 'branch_orders', 'salary_payments', 'receivables', 'inventory_logs'])
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false)
+  const [clearConfirmText, setClearConfirmText] = useState('')
+  const [clearing, setClearing] = useState(false)
+  const CLEARABLE_TABLES = [
+    { key: 'sales',           label: 'Sales' },
+    { key: 'expenses',        label: 'Expenses' },
+    { key: 'branch_orders',   label: 'Branch Orders' },
+    { key: 'salary_payments', label: 'Salary Payments' },
+    { key: 'receivables',     label: 'Receivables' },
+    { key: 'inventory_logs',  label: 'Inventory Logs' },
+  ]
+  const years = Array.from({ length: 5 }, (_, i) => now.getFullYear() - i)
+
+  function toggleTable(key: string) {
+    setClearTables(prev => prev.includes(key) ? prev.filter(t => t !== key) : [...prev, key])
+  }
+
+  async function handleClearData() {
+    if (clearConfirmText !== 'DELETE') return
+    setClearing(true)
+    const { data: { session } } = await supabase.auth.getSession()
+    const res = await fetch(`${API_BASE}/api/admin/clear-month-data`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+      },
+      body: JSON.stringify({ year: clearYear, month: clearMonth, tables: clearTables }),
+    })
+    const data = await res.json()
+    setClearing(false)
+    setClearConfirmOpen(false)
+    setClearConfirmText('')
+    if (!res.ok) {
+      toast.error('Failed: ' + data.error)
+    } else {
+      toast.success(`Cleared ${data.total} records from ${MONTHS[clearMonth - 1]} ${clearYear}`)
+    }
+  }
 
   function sortUsers(list: AuthUser[]) {
     const knownUsernames = Object.keys(USER_META).map(e => e.split('@')[0])
@@ -265,6 +311,108 @@ export function SettingsPage() {
           </CardContent>
         </Card>
       </div>
+
+        {/* Data Management */}
+        <Card className="border-red-200">
+          <CardHeader>
+            <CardTitle className="text-sm font-medium text-red-700 flex items-center gap-2">
+              <Trash2 className="w-4 h-4" /> Data Management
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-start gap-2 p-3 bg-red-50 rounded-lg border border-red-200">
+              <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+              <p className="text-xs text-red-700">Permanently deletes transactional records for the selected month. This cannot be undone. Inventory items, branches, and user accounts are not affected.</p>
+            </div>
+
+            <div className="flex gap-2">
+              <Select value={String(clearMonth)} onValueChange={v => setClearMonth(Number(v))}>
+                <SelectTrigger className="w-36 h-8 text-sm">
+                  <span>{MONTHS[clearMonth - 1]}</span>
+                </SelectTrigger>
+                <SelectContent>
+                  {MONTHS.map((m, i) => <SelectItem key={i} value={String(i + 1)}>{m}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Select value={String(clearYear)} onValueChange={v => setClearYear(Number(v))}>
+                <SelectTrigger className="w-24 h-8 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {years.map(y => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <p className="text-xs font-medium text-slate-600 mb-2">Select data to clear:</p>
+              <div className="grid grid-cols-2 gap-2">
+                {CLEARABLE_TABLES.map(t => (
+                  <label key={t.key} className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={clearTables.includes(t.key)}
+                      onChange={() => toggleTable(t.key)}
+                      className="w-3.5 h-3.5 accent-red-500"
+                    />
+                    <span className="text-sm text-slate-700">{t.label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={clearTables.length === 0}
+              onClick={() => { setClearConfirmText(''); setClearConfirmOpen(true) }}
+            >
+              <Trash2 className="w-4 h-4 mr-1" />
+              Clear {MONTHS[clearMonth - 1]} {clearYear} Data
+            </Button>
+          </CardContent>
+        </Card>
+
+      {/* Clear confirm dialog */}
+      {clearConfirmOpen && (
+        <Dialog open onOpenChange={() => setClearConfirmOpen(false)}>
+          <DialogContent className="sm:max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="text-red-700">Confirm Data Deletion</DialogTitle>
+              <p className="text-sm text-slate-500 mt-1">
+                You are about to permanently delete <span className="font-semibold">{clearTables.length} table{clearTables.length !== 1 ? 's' : ''}</span> of data for <span className="font-semibold">{MONTHS[clearMonth - 1]} {clearYear}</span>.
+              </p>
+            </DialogHeader>
+            <div className="space-y-4 mt-2">
+              <div className="bg-red-50 rounded-lg border border-red-200 px-3 py-2 text-xs text-red-700 space-y-0.5">
+                {clearTables.map(t => (
+                  <p key={t}>• {CLEARABLE_TABLES.find(ct => ct.key === t)?.label}</p>
+                ))}
+              </div>
+              <div className="space-y-1.5">
+                <Label>Type <span className="font-bold text-slate-800">DELETE</span> to confirm</Label>
+                <Input
+                  value={clearConfirmText}
+                  onChange={e => setClearConfirmText(e.target.value)}
+                  placeholder="DELETE"
+                  autoFocus
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" className="flex-1" onClick={() => setClearConfirmOpen(false)}>Cancel</Button>
+                <Button
+                  variant="destructive"
+                  className="flex-1"
+                  disabled={clearConfirmText !== 'DELETE' || clearing}
+                  onClick={handleClearData}
+                >
+                  {clearing ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Yes, Delete'}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {editing && (
         <Dialog open onOpenChange={() => setEditing(null)}>
