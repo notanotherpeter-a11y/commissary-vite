@@ -3,7 +3,7 @@ import { useAuth } from '@/lib/auth-context'
 import {
   LayoutDashboard, TrendingUp, Store, ShoppingBag,
   Receipt, Users, Package, Wallet, BarChart3,
-  Settings, Bell, Building2, LogOut, Menu, ChevronDown, ChevronRight
+  Settings, Bell, Building2, LogOut, Menu, ChevronDown, ChevronRight, Calculator
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
@@ -20,6 +20,7 @@ const NAV_ITEMS = [
   { label: 'Receivables',     path: '/receivables',    icon: Wallet,          roles: ['admin', 'investor'] },
   { label: 'Reports',         path: '/reports',        icon: BarChart3,       roles: ['admin', 'investor'] },
   { label: 'Notifications',   path: '/notifications',  icon: Bell,            roles: ['admin', 'investor', 'branch'] },
+  { label: 'Net Cost',        path: '/net-cost',       icon: Calculator,      roles: ['admin', 'investor'] },
   { label: 'Settings',        path: '/settings',       icon: Settings,        roles: ['admin'] },
 ]
 

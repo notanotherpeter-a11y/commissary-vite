@@ -16,6 +16,7 @@ import { BranchOrdersPage } from '@/pages/BranchOrdersPage'
 import { NotificationsPage } from '@/pages/NotificationsPage'
 import { SettingsPage } from '@/pages/SettingsPage'
 import { BranchPage } from '@/pages/BranchPage'
+import { NetCostPage } from '@/pages/NetCostPage'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { session, loading } = useAuth()
@@ -53,6 +54,7 @@ export default function App() {
         <Route path="branch-orders" element={<BranchOrdersPage />} />
         <Route path="notifications" element={<NotificationsPage />} />
         <Route path="settings" element={<SettingsPage />} />
+        <Route path="net-cost" element={<NetCostPage />} />
         <Route path="branches/:slug" element={<BranchPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
