@@ -18,14 +18,29 @@ import { cn } from '@/lib/utils'
 
 type TabView = 'stock' | 'cost' | 'branch_items'
 
+interface CostEntry {
+  id: string
+  item_name: string
+  category: string | null
+  unit: string | null
+  quantity: number
+  stock_price: number
+  price: number
+  notes: string | null
+  date: string | null
+  created_at: string
+}
+
 export function InventoryPage() {
   const { role, branch: userBranchSlug } = useAuth()
   const userMeta = { role: role ?? 'branch', branch: userBranchSlug }
   const [branches, setBranches] = useState<Branch[]>([])
   const [items, setItems] = useState<InventoryItem[]>([])
+  const [costEntries, setCostEntries] = useState<CostEntry[]>([])
   const [search, setSearch] = useState('')
   const [view, setView] = useState<'table' | 'card'>('table')
   const [loading, setLoading] = useState(true)
+  const [costLoading, setCostLoading] = useState(true)
   const [tab, setTab] = useState<TabView>('stock')
   const [showAdd, setShowAdd] = useState(false)
   const [editing, setEditing] = useState<InventoryItem | null>(null)
@@ -51,7 +66,15 @@ export function InventoryPage() {
     setLoading(false)
   }, [])
 
+  const fetchCostEntries = useCallback(async () => {
+    setCostLoading(true)
+    const { data } = await supabase.from('inventory_cost_entries').select('*').order('date', { ascending: false })
+    setCostEntries((data ?? []) as CostEntry[])
+    setCostLoading(false)
+  }, [])
+
   useEffect(() => { fetchItems() }, [fetchItems])
+  useEffect(() => { fetchCostEntries() }, [fetchCostEntries])
 
   useEffect(() => {
     const ch = supabase.channel('inventory-rt').on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' }, fetchItems).subscribe()
@@ -71,12 +94,13 @@ export function InventoryPage() {
   const filtered = isBranch ? allFiltered.filter(i => Number(i.price) > 0) : allFiltered
   const lowStock = filtered.filter(i => isAdmin && Number(i.quantity) < Number(i.min_quantity))
 
-  // Cost tab computed values
-  const itemsWithPrice = items.filter(i => Number(i.price) > 0)
-  const totalStockValue = items.reduce((sum, i) => sum + Number(i.price ?? 0) * Number(i.quantity ?? 0), 0)
-  const totalStockCost = items.reduce((sum, i) => sum + Number(i.stock_price ?? 0) * Number(i.quantity ?? 0), 0)
+  // Cost tab computed values — from permanent cost entries ledger
+  const itemsWithPrice = costEntries.filter(i => Number(i.price) > 0)
+  const totalStockValue = costEntries.reduce((sum, i) => sum + Number(i.price ?? 0) * Number(i.quantity ?? 0), 0)
+  const totalStockCost = costEntries.reduce((sum, i) => sum + Number(i.stock_price ?? 0) * Number(i.quantity ?? 0), 0)
+  const totalProfit = totalStockValue - totalStockCost
   const dailyCost = totalStockCost / 30
-  const costSorted = [...items].sort((a, b) => (Number(b.price ?? 0) * Number(b.quantity ?? 0)) - (Number(a.price ?? 0) * Number(a.quantity ?? 0)))
+  const costSorted = [...costEntries].sort((a, b) => (Number(b.price ?? 0) * Number(b.quantity ?? 0)) - (Number(a.price ?? 0) * Number(a.quantity ?? 0)))
 
   return (
     <div>
@@ -258,7 +282,7 @@ export function InventoryPage() {
       {tab === 'cost' && (
         <>
           {/* KPI row */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
             <div className="bg-white rounded-lg border p-4">
               <p className="text-xs text-slate-500 mb-1">Total Stock Value</p>
               <p className="text-xl font-bold text-amber-600">₱{totalStockValue.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</p>
@@ -269,14 +293,19 @@ export function InventoryPage() {
               <p className="text-xl font-bold text-blue-600">₱{totalStockCost.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</p>
               <p className="text-[10px] text-slate-400 mt-0.5">purchase price × qty</p>
             </div>
+            <div className={`bg-white rounded-lg border p-4`}>
+              <p className="text-xs text-slate-500 mb-1">Total Profit</p>
+              <p className={`text-xl font-bold ${totalProfit >= 0 ? 'text-green-600' : 'text-red-500'}`}>₱{totalProfit.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</p>
+              <p className="text-[10px] text-slate-400 mt-0.5">value − cost</p>
+            </div>
             <div className="bg-white rounded-lg border p-4">
               <p className="text-xs text-slate-500 mb-1">Daily Cost</p>
               <p className="text-xl font-bold text-slate-700">₱{dailyCost.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</p>
               <p className="text-[10px] text-slate-400 mt-0.5">stock cost ÷ 30 days</p>
             </div>
             <div className="bg-white rounded-lg border p-4">
-              <p className="text-xs text-slate-500 mb-1">Total Items</p>
-              <p className="text-xl font-bold text-slate-800">{items.length}</p>
+              <p className="text-xs text-slate-500 mb-1">Total Entries</p>
+              <p className="text-xl font-bold text-slate-800">{costEntries.length}</p>
             </div>
             <div className="bg-white rounded-lg border p-4">
               <p className="text-xs text-slate-500 mb-1">Priced Items</p>
@@ -290,31 +319,34 @@ export function InventoryPage() {
                 <TableRow className="bg-slate-50">
                   <TableHead>Item</TableHead>
                   <TableHead>Category</TableHead>
-                  <TableHead className="text-right">Qty</TableHead>
                   <TableHead>Unit</TableHead>
+                  <TableHead className="text-right">Qty</TableHead>
                   <TableHead className="text-right">Stock Price</TableHead>
                   <TableHead className="text-right">Total Cost</TableHead>
                   <TableHead className="text-right">Unit Price</TableHead>
                   <TableHead className="text-right">Total Value</TableHead>
+                  <TableHead className="text-right">Total Profit</TableHead>
+                  <TableHead>Date</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {loading ? (
-                  <TableRow><TableCell colSpan={8} className="text-center py-8 text-slate-500">Loading…</TableCell></TableRow>
+                {costLoading ? (
+                  <TableRow><TableCell colSpan={10} className="text-center py-8 text-slate-500">Loading…</TableCell></TableRow>
                 ) : costSorted.length === 0 ? (
-                  <TableRow><TableCell colSpan={8} className="text-center py-8 text-slate-500">No items.</TableCell></TableRow>
-                ) : costSorted.map(item => {
-                  const unitPrice = Number(item.price ?? 0)
-                  const stockPrice = Number(item.stock_price ?? 0)
-                  const qty = Number(item.quantity ?? 0)
+                  <TableRow><TableCell colSpan={10} className="text-center py-8 text-slate-500">No cost entries yet. Add inventory items to populate this log.</TableCell></TableRow>
+                ) : costSorted.map(entry => {
+                  const unitPrice = Number(entry.price ?? 0)
+                  const stockPrice = Number(entry.stock_price ?? 0)
+                  const qty = Number(entry.quantity ?? 0)
                   const totalValue = unitPrice * qty
                   const totalCost = stockPrice * qty
+                  const profit = totalValue - totalCost
                   return (
-                    <TableRow key={item.id}>
-                      <TableCell className="font-medium">{item.name}</TableCell>
-                      <TableCell><Badge variant="secondary">{item.category}</Badge></TableCell>
-                      <TableCell className="text-right">{item.quantity}</TableCell>
-                      <TableCell className="text-sm text-slate-500">{item.unit}</TableCell>
+                    <TableRow key={entry.id}>
+                      <TableCell className="font-medium">{entry.item_name}</TableCell>
+                      <TableCell><Badge variant="secondary">{entry.category ?? '—'}</Badge></TableCell>
+                      <TableCell className="text-sm text-slate-500">{entry.unit ?? '—'}</TableCell>
+                      <TableCell className="text-right">{entry.quantity}</TableCell>
                       <TableCell className="text-right text-blue-600">
                         {stockPrice > 0 ? `₱${stockPrice.toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '—'}
                       </TableCell>
@@ -327,6 +359,10 @@ export function InventoryPage() {
                       <TableCell className="text-right font-semibold text-slate-900">
                         {totalValue > 0 ? `₱${totalValue.toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '—'}
                       </TableCell>
+                      <TableCell className={`text-right font-semibold ${profit > 0 ? 'text-green-600' : profit < 0 ? 'text-red-500' : 'text-slate-400'}`}>
+                        {unitPrice > 0 && stockPrice > 0 ? `₱${profit.toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '—'}
+                      </TableCell>
+                      <TableCell className="text-xs text-slate-500">{entry.date ? formatDate(entry.date) : '—'}</TableCell>
                     </TableRow>
                   )
                 })}
@@ -340,6 +376,10 @@ export function InventoryPage() {
                   <TableCell className="text-right font-bold text-amber-700 text-base">
                     ₱{totalStockValue.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
                   </TableCell>
+                  <TableCell className={`text-right font-bold text-base ${totalProfit >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                    ₱{totalProfit.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                  </TableCell>
+                  <TableCell />
                 </TableRow>
               </TableBody>
             </Table>
@@ -397,7 +437,7 @@ export function InventoryPage() {
       {(showAdd || editing) && (
         <AddInventoryModal branches={branches} initial={editing}
           onClose={() => { setShowAdd(false); setEditing(null) }}
-          onSaved={() => { setShowAdd(false); setEditing(null); fetchItems() }}
+          onSaved={() => { setShowAdd(false); setEditing(null); fetchItems(); fetchCostEntries() }}
         />
       )}
       {historyItem && <InventoryHistoryModal item={historyItem} onClose={() => setHistoryItem(null)} />}

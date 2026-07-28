@@ -79,7 +79,19 @@ export function AddInventoryModal({ initial, onClose, onSaved }: Props) {
       const { data: inserted, error: insertErr } = await supabase.from('inventory').insert(payload).select('id').single()
       error = insertErr
       if (!error && inserted) {
-        await writeLog({ inventory_id: inserted.id, item_name: name, action: 'added', new_quantity: Number(quantity), changed_by: 'admin' })
+        await Promise.all([
+          writeLog({ inventory_id: inserted.id, item_name: name, action: 'added', new_quantity: Number(quantity), changed_by: 'admin' }),
+          supabase.from('inventory_cost_entries').insert({
+            item_name: name,
+            category,
+            unit,
+            quantity: Number(quantity),
+            stock_price: Number(stockPrice),
+            price: Number(price),
+            notes: notes.trim() || null,
+            date: date || new Date().toISOString().split('T')[0],
+          }),
+        ])
       }
     }
     if (error) toast.error('Failed: ' + error.message)
