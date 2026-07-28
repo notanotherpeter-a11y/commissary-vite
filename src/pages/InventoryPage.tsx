@@ -334,15 +334,26 @@ export function InventoryPage() {
                   const dayCost = dayEntries.reduce((s, e) => s + Number(e.stock_price ?? 0) * Number(e.quantity ?? 0), 0)
                   const dayValue = dayEntries.reduce((s, e) => s + Number(e.price ?? 0) * Number(e.quantity ?? 0), 0)
                   const dayProfit = dayValue - dayCost
+                  const ids = dayEntries.map(e => e.id)
+
+                  async function deleteCard() {
+                    if (!confirm(`Delete all ${ids.length} cost entr${ids.length !== 1 ? 'ies' : 'y'} for ${dateKey !== 'No Date' ? formatDate(dateKey) : 'No Date'}?`)) return
+                    await supabase.from('inventory_cost_entries').delete().in('id', ids)
+                    fetchCostEntries()
+                  }
+
                   return (
                     <div key={dateKey} className="bg-white rounded-lg border overflow-hidden">
                       {/* Date header */}
                       <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50 border-b">
                         <span className="text-sm font-semibold text-slate-700">{dateKey !== 'No Date' ? formatDate(dateKey) : 'No Date'}</span>
-                        <div className="flex gap-4 text-xs">
+                        <div className="flex items-center gap-4 text-xs">
                           <span className="text-blue-600 font-medium">Cost: {fmt(dayCost)}</span>
                           <span className="text-amber-600 font-medium">Value: {fmt(dayValue)}</span>
                           <span className={`font-semibold ${dayProfit >= 0 ? 'text-green-600' : 'text-red-500'}`}>Profit: {fmt(dayProfit)}</span>
+                          <Button variant="ghost" size="icon" className="h-6 w-6 text-red-400 hover:text-red-600 hover:bg-red-50 ml-1" title="Delete this date's entries" onClick={deleteCard}>
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
                         </div>
                       </div>
                       <Table>
