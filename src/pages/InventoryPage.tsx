@@ -74,6 +74,8 @@ export function InventoryPage() {
   // Cost tab computed values
   const itemsWithPrice = items.filter(i => Number(i.price) > 0)
   const totalStockValue = items.reduce((sum, i) => sum + Number(i.price ?? 0) * Number(i.quantity ?? 0), 0)
+  const totalStockCost = items.reduce((sum, i) => sum + Number(i.stock_price ?? 0) * Number(i.quantity ?? 0), 0)
+  const dailyCost = totalStockCost / 30
   const costSorted = [...items].sort((a, b) => (Number(b.price ?? 0) * Number(b.quantity ?? 0)) - (Number(a.price ?? 0) * Number(a.quantity ?? 0)))
 
   return (
@@ -256,10 +258,21 @@ export function InventoryPage() {
       {tab === 'cost' && (
         <>
           {/* KPI row */}
-          <div className="grid grid-cols-3 gap-3 mb-6">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
             <div className="bg-white rounded-lg border p-4">
               <p className="text-xs text-slate-500 mb-1">Total Stock Value</p>
               <p className="text-xl font-bold text-amber-600">₱{totalStockValue.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</p>
+              <p className="text-[10px] text-slate-400 mt-0.5">selling price × qty</p>
+            </div>
+            <div className="bg-white rounded-lg border p-4">
+              <p className="text-xs text-slate-500 mb-1">Total Stock Cost</p>
+              <p className="text-xl font-bold text-blue-600">₱{totalStockCost.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</p>
+              <p className="text-[10px] text-slate-400 mt-0.5">purchase price × qty</p>
+            </div>
+            <div className="bg-white rounded-lg border p-4">
+              <p className="text-xs text-slate-500 mb-1">Daily Cost</p>
+              <p className="text-xl font-bold text-slate-700">₱{dailyCost.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</p>
+              <p className="text-[10px] text-slate-400 mt-0.5">stock cost ÷ 30 days</p>
             </div>
             <div className="bg-white rounded-lg border p-4">
               <p className="text-xs text-slate-500 mb-1">Total Items</p>
@@ -279,25 +292,35 @@ export function InventoryPage() {
                   <TableHead>Category</TableHead>
                   <TableHead className="text-right">Qty</TableHead>
                   <TableHead>Unit</TableHead>
+                  <TableHead className="text-right">Stock Price</TableHead>
+                  <TableHead className="text-right">Total Cost</TableHead>
                   <TableHead className="text-right">Unit Price</TableHead>
                   <TableHead className="text-right">Total Value</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
-                  <TableRow><TableCell colSpan={6} className="text-center py-8 text-slate-500">Loading…</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={8} className="text-center py-8 text-slate-500">Loading…</TableCell></TableRow>
                 ) : costSorted.length === 0 ? (
-                  <TableRow><TableCell colSpan={6} className="text-center py-8 text-slate-500">No items.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={8} className="text-center py-8 text-slate-500">No items.</TableCell></TableRow>
                 ) : costSorted.map(item => {
                   const unitPrice = Number(item.price ?? 0)
+                  const stockPrice = Number(item.stock_price ?? 0)
                   const qty = Number(item.quantity ?? 0)
                   const totalValue = unitPrice * qty
+                  const totalCost = stockPrice * qty
                   return (
                     <TableRow key={item.id}>
                       <TableCell className="font-medium">{item.name}</TableCell>
                       <TableCell><Badge variant="secondary">{item.category}</Badge></TableCell>
                       <TableCell className="text-right">{item.quantity}</TableCell>
                       <TableCell className="text-sm text-slate-500">{item.unit}</TableCell>
+                      <TableCell className="text-right text-blue-600">
+                        {stockPrice > 0 ? `₱${stockPrice.toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '—'}
+                      </TableCell>
+                      <TableCell className="text-right font-semibold text-blue-700">
+                        {totalCost > 0 ? `₱${totalCost.toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '—'}
+                      </TableCell>
                       <TableCell className="text-right text-slate-700">
                         {unitPrice > 0 ? `₱${unitPrice.toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '—'}
                       </TableCell>
@@ -310,6 +333,10 @@ export function InventoryPage() {
                 {/* Grand total row */}
                 <TableRow className="bg-amber-50 border-t-2 border-amber-200">
                   <TableCell colSpan={5} className="font-bold text-slate-800">Grand Total</TableCell>
+                  <TableCell className="text-right font-bold text-blue-700 text-base">
+                    ₱{totalStockCost.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                  </TableCell>
+                  <TableCell />
                   <TableCell className="text-right font-bold text-amber-700 text-base">
                     ₱{totalStockValue.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
                   </TableCell>
