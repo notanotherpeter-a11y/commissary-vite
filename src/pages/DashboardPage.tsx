@@ -10,7 +10,7 @@ import {
 } from 'recharts'
 import type { Branch } from '@/types'
 
-interface SaleRow { amount: number; branch_id: number; date: string; notes: string | null }
+interface BranchOrderRow { amount: number | null; to_branch_id: number | null; date: string }
 interface ExpenseRow { amount: number; branch_id: number; date: string; category: string }
 interface SalaryRow { amount: number; date: string }
 interface ReceivableRow { amount: number; date: string; description: string }
@@ -20,7 +20,7 @@ export function DashboardPage() {
   const [month, setMonth] = useState(now.month)
   const [year, setYear] = useState(now.year)
   const [branches, setBranches] = useState<Branch[]>([])
-  const [sales, setSales] = useState<SaleRow[]>([])
+  const [branchOrders, setBranchOrders] = useState<BranchOrderRow[]>([])
   const [expenses, setExpenses] = useState<ExpenseRow[]>([])
   const [salaryPayments, setSalaryPayments] = useState<SalaryRow[]>([])
   const [receivables, setReceivables] = useState<ReceivableRow[]>([])
@@ -38,14 +38,14 @@ export function DashboardPage() {
     const lastDay = new Date(year, month, 0).getDate()
     const end = `${year}-${String(month).padStart(2, '0')}-${lastDay}`
 
-    const [s, e, sp, r] = await Promise.all([
-      supabase.from('sales').select('amount,branch_id,date,notes').gte('date', start).lte('date', end),
+    const [bo, e, sp, r] = await Promise.all([
+      supabase.from('branch_orders').select('amount,to_branch_id,date').eq('status', 'approved').gte('date', start).lte('date', end),
       supabase.from('expenses').select('amount,branch_id,date,category').gte('date', start).lte('date', end),
       supabase.from('salary_payments').select('amount,date').gte('date', start).lte('date', end),
       supabase.from('receivables').select('amount,date,description').gte('date', start).lte('date', end),
     ])
 
-    setSales(s.data ?? [])
+    setBranchOrders(bo.data ?? [])
     setExpenses(e.data ?? [])
     setSalaryPayments(sp.data ?? [])
     setReceivables(r.data ?? [])
@@ -57,7 +57,7 @@ export function DashboardPage() {
   useEffect(() => {
     const channel = supabase
       .channel('dashboard-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'sales' }, fetchData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'branch_orders' }, fetchData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses' }, fetchData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'salary_payments' }, fetchData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'receivables' }, fetchData)
@@ -65,7 +65,7 @@ export function DashboardPage() {
     return () => { supabase.removeChannel(channel) }
   }, [fetchData])
 
-  const grossSales = sales.reduce((s, r) => s + Number(r.amount), 0)
+  const grossSales = branchOrders.reduce((s, r) => s + Number(r.amount ?? 0), 0)
   const totalExpenses = expenses.reduce((s, r) => s + Number(r.amount), 0)
   const netSales = grossSales - totalExpenses
   const runningSalary = salaryPayments.reduce((s, r) => s + Number(r.amount), 0)
@@ -75,14 +75,16 @@ export function DashboardPage() {
     .reduce((s, r) => s + Number(r.amount), 0)
   const grandTotal = grossSales + totalReceivables
 
+  // Chart: approved branch orders grouped by branch
   const chartData = branches
     .map(b => ({
       name: b.name,
-      sales: sales.filter(s => s.branch_id === b.id).reduce((acc, s) => acc + Number(s.amount), 0),
+      sales: branchOrders.filter(o => o.to_branch_id === b.id).reduce((acc, o) => acc + Number(o.amount ?? 0), 0),
     }))
     .filter(b => b.sales > 0)
 
-  const recentSales = [...sales]
+  // Recent: last 5 approved branch orders
+  const recentOrders = [...branchOrders]
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
     .slice(0, 5)
 
@@ -154,22 +156,25 @@ export function DashboardPage() {
 
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Recent Sales</CardTitle>
+            <CardTitle className="text-sm font-medium">Recent Branch Orders</CardTitle>
           </CardHeader>
           <CardContent>
-            {recentSales.length === 0 ? (
-              <p className="text-sm text-slate-500">No sales this period.</p>
+            {recentOrders.length === 0 ? (
+              <p className="text-sm text-slate-500">No approved orders this period.</p>
             ) : (
               <div className="space-y-3">
-                {recentSales.map((s, i) => (
-                  <div key={i} className="flex justify-between items-start">
-                    <div>
-                      <p className="text-xs text-slate-500">{formatDate(s.date)}</p>
-                      {s.notes && <p className="text-xs text-slate-400 truncate max-w-28">{s.notes}</p>}
+                {recentOrders.map((o, i) => {
+                  const branch = branches.find(b => b.id === o.to_branch_id)
+                  return (
+                    <div key={i} className="flex justify-between items-start">
+                      <div>
+                        <p className="text-xs text-slate-500">{formatDate(o.date)}</p>
+                        {branch && <p className="text-xs text-slate-400 truncate max-w-28">{branch.name}</p>}
+                      </div>
+                      <span className="text-sm font-semibold text-green-700">{formatCurrency(Number(o.amount ?? 0))}</span>
                     </div>
-                    <span className="text-sm font-semibold text-green-700">{formatCurrency(Number(s.amount))}</span>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </CardContent>
