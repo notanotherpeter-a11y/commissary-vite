@@ -72,6 +72,7 @@ export interface InventoryItem {
   price: number        // unit price (selling price to branches)
   stock_price: number  // cost/purchase price (admin only)
   notes: string | null
+  date: string | null
   branch_id: number
   updated_at: string
   branches?: Branch

@@ -49,6 +49,7 @@ export function AddInventoryModal({ initial, onClose, onSaved }: Props) {
   const [price, setPrice] = useState(String(initial?.price ?? '0'))
   const [stockPrice, setStockPrice] = useState(String(initial?.stock_price ?? '0'))
   const [notes, setNotes] = useState(initial?.notes ?? '')
+  const [date, setDate] = useState(initial?.date ?? new Date().toISOString().split('T')[0])
   const [saving, setSaving] = useState(false)
 
   const category = categorySelect === '__custom__' ? customCategory : categorySelect
@@ -64,6 +65,7 @@ export function AddInventoryModal({ initial, onClose, onSaved }: Props) {
       price: Number(price),
       stock_price: Number(stockPrice),
       notes: notes.trim() || null,
+      date: date || new Date().toISOString().split('T')[0],
       branch_id: COMMISSARY_ID,
       updated_at: new Date().toISOString(),
     }
@@ -118,6 +120,10 @@ export function AddInventoryModal({ initial, onClose, onSaved }: Props) {
             <div className="space-y-1.5">
               <Label>Quantity</Label>
               <Input type="number" min="0" step="0.01" value={quantity} onChange={e => setQuantity(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Date</Label>
+              <Input type="date" value={date} onChange={e => setDate(e.target.value)} />
             </div>
             <div className="col-span-2 space-y-1.5">
               <Label>Notes</Label>
