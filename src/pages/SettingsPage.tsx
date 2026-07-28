@@ -72,8 +72,7 @@ export function SettingsPage() {
   const [deleting, setDeleting] = useState<AuthUser | null>(null)
   const [confirmDelete, setConfirmDelete] = useState('')
 
-  // Clear inventory
-  const [invClearItems, setInvClearItems] = useState({ inventory: false, inventory_cost_entries: false })
+  // Clear inventory cost entries
   const [invClearConfirmOpen, setInvClearConfirmOpen] = useState(false)
   const [invClearConfirmText, setInvClearConfirmText] = useState('')
   const [invClearing, setInvClearing] = useState(false)
@@ -81,13 +80,11 @@ export function SettingsPage() {
   async function handleClearInventory() {
     if (invClearConfirmText !== 'DELETE') return
     setInvClearing(true)
-    if (invClearItems.inventory) await supabase.from('inventory').delete().neq('id', '00000000-0000-0000-0000-000000000000')
-    if (invClearItems.inventory_cost_entries) await supabase.from('inventory_cost_entries').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+    await supabase.from('inventory_cost_entries').delete().neq('id', '00000000-0000-0000-0000-000000000000')
     setInvClearing(false)
     setInvClearConfirmOpen(false)
     setInvClearConfirmText('')
-    setInvClearItems({ inventory: false, inventory_cost_entries: false })
-    toast.success('Inventory data cleared')
+    toast.success('Items Cost Entries cleared')
   }
 
   // Clear month data
@@ -541,37 +538,17 @@ export function SettingsPage() {
               </Button>
             </div>
 
-            {/* Inventory clearing */}
+            {/* Inventory cost entries clearing */}
             <div className="border-t border-red-100 pt-4 mt-2">
-              <p className="text-xs font-medium text-slate-600 mb-2">Clear Inventory Items:</p>
-              <div className="grid grid-cols-2 gap-2 mb-3">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={invClearItems.inventory}
-                    onChange={() => setInvClearItems(prev => ({ ...prev, inventory: !prev.inventory }))}
-                    className="w-3.5 h-3.5 accent-red-500"
-                  />
-                  <span className="text-sm text-slate-700">Stock List</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={invClearItems.inventory_cost_entries}
-                    onChange={() => setInvClearItems(prev => ({ ...prev, inventory_cost_entries: !prev.inventory_cost_entries }))}
-                    className="w-3.5 h-3.5 accent-red-500"
-                  />
-                  <span className="text-sm text-slate-700">Items Cost Entries</span>
-                </label>
-              </div>
+              <p className="text-xs font-medium text-slate-600 mb-2">Clear Items Cost Entries:</p>
+              <p className="text-xs text-slate-500 mb-3">Clears all records from the Items Cost log. Stock List and Branch Item List can only be deleted individually from the Inventory page.</p>
               <Button
                 variant="destructive"
                 size="sm"
-                disabled={!invClearItems.inventory && !invClearItems.inventory_cost_entries}
                 onClick={() => { setInvClearConfirmText(''); setInvClearConfirmOpen(true) }}
               >
                 <Trash2 className="w-4 h-4 mr-1" />
-                Clear Selected Inventory
+                Clear Items Cost Entries
               </Button>
             </div>
           </CardContent>
@@ -588,9 +565,8 @@ export function SettingsPage() {
               </p>
             </DialogHeader>
             <div className="space-y-4 mt-2">
-              <div className="bg-red-50 rounded-lg border border-red-200 px-3 py-2 text-xs text-red-700 space-y-0.5">
-                {invClearItems.inventory && <p>• Stock List (all inventory items)</p>}
-                {invClearItems.inventory_cost_entries && <p>• Items Cost Entries (all cost log records)</p>}
+              <div className="bg-red-50 rounded-lg border border-red-200 px-3 py-2 text-xs text-red-700">
+                <p>• Items Cost Entries (all cost log records)</p>
               </div>
               <div className="space-y-1.5">
                 <Label>Type <span className="font-bold text-slate-800">DELETE</span> to confirm</Label>
