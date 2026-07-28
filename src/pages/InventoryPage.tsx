@@ -313,77 +313,98 @@ export function InventoryPage() {
             </div>
           </div>
 
-          <div className="bg-white rounded-lg border overflow-hidden">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-slate-50">
-                  <TableHead>Item</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead>Unit</TableHead>
-                  <TableHead className="text-right">Qty</TableHead>
-                  <TableHead className="text-right">Stock Price</TableHead>
-                  <TableHead className="text-right">Total Cost</TableHead>
-                  <TableHead className="text-right">Unit Price</TableHead>
-                  <TableHead className="text-right">Total Value</TableHead>
-                  <TableHead className="text-right">Total Profit</TableHead>
-                  <TableHead>Date</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {costLoading ? (
-                  <TableRow><TableCell colSpan={10} className="text-center py-8 text-slate-500">Loading…</TableCell></TableRow>
-                ) : costSorted.length === 0 ? (
-                  <TableRow><TableCell colSpan={10} className="text-center py-8 text-slate-500">No cost entries yet. Add inventory items to populate this log.</TableCell></TableRow>
-                ) : costSorted.map(entry => {
-                  const unitPrice = Number(entry.price ?? 0)
-                  const stockPrice = Number(entry.stock_price ?? 0)
-                  const qty = Number(entry.quantity ?? 0)
-                  const totalValue = unitPrice * qty
-                  const totalCost = stockPrice * qty
-                  const profit = totalValue - totalCost
+          {costLoading ? (
+            <div className="bg-white rounded-lg border p-8 text-center text-slate-500">Loading…</div>
+          ) : costSorted.length === 0 ? (
+            <div className="bg-white rounded-lg border p-8 text-center text-slate-500">No cost entries yet. Add inventory items to populate this log.</div>
+          ) : (() => {
+            // Group entries by date
+            const grouped: Record<string, CostEntry[]> = {}
+            costSorted.forEach(entry => {
+              const key = entry.date ?? 'No Date'
+              if (!grouped[key]) grouped[key] = []
+              grouped[key].push(entry)
+            })
+            const sortedDates = Object.keys(grouped).sort((a, b) => b.localeCompare(a))
+            const fmt = (n: number) => `₱${n.toLocaleString('en-PH', { minimumFractionDigits: 2 })}`
+            return (
+              <div className="space-y-4">
+                {sortedDates.map(dateKey => {
+                  const dayEntries = grouped[dateKey]
+                  const dayCost = dayEntries.reduce((s, e) => s + Number(e.stock_price ?? 0) * Number(e.quantity ?? 0), 0)
+                  const dayValue = dayEntries.reduce((s, e) => s + Number(e.price ?? 0) * Number(e.quantity ?? 0), 0)
+                  const dayProfit = dayValue - dayCost
                   return (
-                    <TableRow key={entry.id}>
-                      <TableCell className="font-medium">{entry.item_name}</TableCell>
-                      <TableCell><Badge variant="secondary">{entry.category ?? '—'}</Badge></TableCell>
-                      <TableCell className="text-sm text-slate-500">{entry.unit ?? '—'}</TableCell>
-                      <TableCell className="text-right">{entry.quantity}</TableCell>
-                      <TableCell className="text-right text-blue-600">
-                        {stockPrice > 0 ? `₱${stockPrice.toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '—'}
-                      </TableCell>
-                      <TableCell className="text-right font-semibold text-blue-700">
-                        {totalCost > 0 ? `₱${totalCost.toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '—'}
-                      </TableCell>
-                      <TableCell className="text-right text-slate-700">
-                        {unitPrice > 0 ? `₱${unitPrice.toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '—'}
-                      </TableCell>
-                      <TableCell className="text-right font-semibold text-slate-900">
-                        {totalValue > 0 ? `₱${totalValue.toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '—'}
-                      </TableCell>
-                      <TableCell className={`text-right font-semibold ${profit > 0 ? 'text-green-600' : profit < 0 ? 'text-red-500' : 'text-slate-400'}`}>
-                        {unitPrice > 0 && stockPrice > 0 ? `₱${profit.toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '—'}
-                      </TableCell>
-                      <TableCell className="text-xs text-slate-500">{entry.date ? formatDate(entry.date) : '—'}</TableCell>
-                    </TableRow>
+                    <div key={dateKey} className="bg-white rounded-lg border overflow-hidden">
+                      {/* Date header */}
+                      <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50 border-b">
+                        <span className="text-sm font-semibold text-slate-700">{dateKey !== 'No Date' ? formatDate(dateKey) : 'No Date'}</span>
+                        <div className="flex gap-4 text-xs">
+                          <span className="text-blue-600 font-medium">Cost: {fmt(dayCost)}</span>
+                          <span className="text-amber-600 font-medium">Value: {fmt(dayValue)}</span>
+                          <span className={`font-semibold ${dayProfit >= 0 ? 'text-green-600' : 'text-red-500'}`}>Profit: {fmt(dayProfit)}</span>
+                        </div>
+                      </div>
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="bg-slate-50/50">
+                            <TableHead>Item</TableHead>
+                            <TableHead>Category</TableHead>
+                            <TableHead>Unit</TableHead>
+                            <TableHead className="text-right">Qty</TableHead>
+                            <TableHead className="text-right">Stock Price</TableHead>
+                            <TableHead className="text-right">Total Cost</TableHead>
+                            <TableHead className="text-right">Unit Price</TableHead>
+                            <TableHead className="text-right">Total Value</TableHead>
+                            <TableHead className="text-right">Total Profit</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {dayEntries.map(entry => {
+                            const unitPrice = Number(entry.price ?? 0)
+                            const stockPrice = Number(entry.stock_price ?? 0)
+                            const qty = Number(entry.quantity ?? 0)
+                            const totalValue = unitPrice * qty
+                            const totalCost = stockPrice * qty
+                            const profit = totalValue - totalCost
+                            return (
+                              <TableRow key={entry.id}>
+                                <TableCell className="font-medium">{entry.item_name}</TableCell>
+                                <TableCell><Badge variant="secondary">{entry.category ?? '—'}</Badge></TableCell>
+                                <TableCell className="text-sm text-slate-500">{entry.unit ?? '—'}</TableCell>
+                                <TableCell className="text-right">{entry.quantity}</TableCell>
+                                <TableCell className="text-right text-blue-600">
+                                  {stockPrice > 0 ? fmt(stockPrice) : '—'}
+                                </TableCell>
+                                <TableCell className="text-right font-semibold text-blue-700">
+                                  {totalCost > 0 ? fmt(totalCost) : '—'}
+                                </TableCell>
+                                <TableCell className="text-right text-slate-700">
+                                  {unitPrice > 0 ? fmt(unitPrice) : '—'}
+                                </TableCell>
+                                <TableCell className="text-right font-semibold text-slate-900">
+                                  {totalValue > 0 ? fmt(totalValue) : '—'}
+                                </TableCell>
+                                <TableCell className={`text-right font-semibold ${profit > 0 ? 'text-green-600' : profit < 0 ? 'text-red-500' : 'text-slate-400'}`}>
+                                  {unitPrice > 0 && stockPrice > 0 ? fmt(profit) : '—'}
+                                </TableCell>
+                              </TableRow>
+                            )
+                          })}
+                        </TableBody>
+                      </Table>
+                    </div>
                   )
                 })}
-                {/* Grand total row */}
-                <TableRow className="bg-amber-50 border-t-2 border-amber-200">
-                  <TableCell colSpan={5} className="font-bold text-slate-800">Grand Total</TableCell>
-                  <TableCell className="text-right font-bold text-blue-700 text-base">
-                    ₱{totalStockCost.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
-                  </TableCell>
-                  <TableCell />
-                  <TableCell className="text-right font-bold text-amber-700 text-base">
-                    ₱{totalStockValue.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
-                  </TableCell>
-                  <TableCell className={`text-right font-bold text-base ${totalProfit >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                    ₱{totalProfit.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
-                  </TableCell>
-                  <TableCell />
-                </TableRow>
-              </TableBody>
-            </Table>
-          </div>
+                {/* Overall Grand Total */}
+                <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 flex justify-end gap-6 text-sm">
+                  <span className="text-blue-700 font-bold">Total Cost: {fmt(totalStockCost)}</span>
+                  <span className="text-amber-700 font-bold">Total Value: {fmt(totalStockValue)}</span>
+                  <span className={`font-bold ${totalProfit >= 0 ? 'text-green-600' : 'text-red-500'}`}>Total Profit: {fmt(totalProfit)}</span>
+                </div>
+              </div>
+            )
+          })()}
         </>
       )}
 
