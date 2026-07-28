@@ -45,9 +45,10 @@ export function AddInventoryModal({ initial, onClose, onSaved }: Props) {
   const [customCategory, setCustomCategory] = useState(!isPreset ? initialCategory : '')
   const [unit, setUnit] = useState(initial?.unit ?? '')
   const [quantity, setQuantity] = useState(String(initial?.quantity ?? '0'))
-  const [minQty, setMinQty] = useState(String(initial?.min_quantity ?? '0'))
+  const [minQty] = useState(String(initial?.min_quantity ?? '0'))
   const [price, setPrice] = useState(String(initial?.price ?? '0'))
   const [stockPrice, setStockPrice] = useState(String(initial?.stock_price ?? '0'))
+  const [notes, setNotes] = useState(initial?.notes ?? '')
   const [saving, setSaving] = useState(false)
 
   const category = categorySelect === '__custom__' ? customCategory : categorySelect
@@ -62,6 +63,7 @@ export function AddInventoryModal({ initial, onClose, onSaved }: Props) {
       min_quantity: Number(minQty),
       price: Number(price),
       stock_price: Number(stockPrice),
+      notes: notes.trim() || null,
       branch_id: COMMISSARY_ID,
       updated_at: new Date().toISOString(),
     }
@@ -117,9 +119,9 @@ export function AddInventoryModal({ initial, onClose, onSaved }: Props) {
               <Label>Quantity</Label>
               <Input type="number" min="0" step="0.01" value={quantity} onChange={e => setQuantity(e.target.value)} />
             </div>
-            <div className="space-y-1.5">
-              <Label>Min Quantity</Label>
-              <Input type="number" min="0" step="0.01" value={minQty} onChange={e => setMinQty(e.target.value)} />
+            <div className="col-span-2 space-y-1.5">
+              <Label>Notes</Label>
+              <Input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional notes…" />
             </div>
             <div className="space-y-1.5">
               <Label>Stock Price (₱) <span className="text-xs text-slate-400">cost</span></Label>

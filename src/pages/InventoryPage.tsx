@@ -151,10 +151,10 @@ export function InventoryPage() {
                 <TableHead>Category</TableHead>
                 <TableHead>Unit</TableHead>
                 <TableHead className="text-right">Qty</TableHead>
-                {isAdmin && <TableHead className="text-right">Min Qty</TableHead>}
                 {isAdmin && <TableHead className="text-right">Stock Price</TableHead>}
                 <TableHead className="text-right">Unit Price</TableHead>
                 {isAdmin && <TableHead className="text-right">Profit</TableHead>}
+                <TableHead>Notes</TableHead>
                 <TableHead>Updated</TableHead>
                 <TableHead className="w-24" />
               </TableRow>
@@ -163,7 +163,7 @@ export function InventoryPage() {
               {loading ? (
                 <TableRow><TableCell colSpan={isAdmin ? 10 : 7} className="text-center py-8 text-slate-500">Loading…</TableCell></TableRow>
               ) : filtered.length === 0 ? (
-                <TableRow><TableCell colSpan={isAdmin ? 10 : 7} className="text-center py-8 text-slate-500">No items found.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={isAdmin ? 10 : 8} className="text-center py-8 text-slate-500">No items found.</TableCell></TableRow>
               ) : filtered.map(item => {
                 const isLow = isAdmin && Number(item.quantity) < Number(item.min_quantity)
                 const unitPrice = Number(item.price ?? 0)
@@ -178,7 +178,6 @@ export function InventoryPage() {
                     <TableCell><Badge variant="secondary">{item.category}</Badge></TableCell>
                     <TableCell className="text-sm text-slate-500">{item.unit}</TableCell>
                     <TableCell className={cn('text-right font-semibold', isLow ? 'text-red-600' : 'text-slate-900')}>{item.quantity}</TableCell>
-                    {isAdmin && <TableCell className="text-right text-slate-500">{item.min_quantity}</TableCell>}
                     {isAdmin && (
                       <TableCell className="text-right text-slate-500">
                         {stockPrice > 0 ? `₱${stockPrice.toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '---'}
@@ -192,6 +191,7 @@ export function InventoryPage() {
                         {unitPrice > 0 && stockPrice > 0 ? `₱${profit.toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '---'}
                       </TableCell>
                     )}
+                    <TableCell className="text-xs text-slate-500 max-w-[120px] truncate">{item.notes ?? '---'}</TableCell>
                     <TableCell className="text-xs text-slate-500">{item.updated_at ? formatDate(item.updated_at.split('T')[0]) : '---'}</TableCell>
                     <TableCell>
                       <div className="flex gap-1 justify-end">

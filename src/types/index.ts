@@ -71,6 +71,7 @@ export interface InventoryItem {
   min_quantity: number
   price: number        // unit price (selling price to branches)
   stock_price: number  // cost/purchase price (admin only)
+  notes: string | null
   branch_id: number
   updated_at: string
   branches?: Branch
@@ -89,6 +90,7 @@ export interface BranchOrder {
   date: string
   notes: string | null
   status: OrderStatus
+  delivered: boolean
   approved_by: string | null
   approved_at: string | null
   created_at: string
