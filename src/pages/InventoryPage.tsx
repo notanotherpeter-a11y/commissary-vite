@@ -129,7 +129,7 @@ export function InventoryPage() {
       {/* Tabs */}
       <div className="flex gap-1 mb-5 border-b border-slate-200">
         {([
-          { label: 'Stock', value: 'stock' as TabView },
+          { label: 'Stock List', value: 'stock' as TabView },
           { label: 'Items Cost', value: 'cost' as TabView },
           ...(isAdmin ? [{ label: 'Branch Item List', value: 'branch_items' as TabView }] : []),
         ]).map(t => (

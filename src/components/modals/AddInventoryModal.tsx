@@ -58,44 +58,111 @@ export function AddInventoryModal({ initial, onClose, onSaved }: Props) {
     e.preventDefault()
     if (!name || !category || !unit) return
     setSaving(true)
-    const payload = {
-      name, category, unit,
-      quantity: Number(quantity),
-      min_quantity: Number(minQty),
-      price: Number(price),
-      stock_price: Number(stockPrice),
-      notes: notes.trim() || null,
-      date: date || new Date().toISOString().split('T')[0],
-      branch_id: COMMISSARY_ID,
-      updated_at: new Date().toISOString(),
-    }
-    let error
+    const dateVal = date || new Date().toISOString().split('T')[0]
+
     if (initial) {
-      ({ error } = await supabase.from('inventory').update(payload).eq('id', initial.id))
+      // ── EDIT MODE ──
+      const { error } = await supabase.from('inventory').update({
+        name, category, unit,
+        quantity: Number(quantity),
+        min_quantity: Number(minQty),
+        price: Number(price),
+        stock_price: Number(stockPrice),
+        notes: notes.trim() || null,
+        date: dateVal,
+        branch_id: COMMISSARY_ID,
+        updated_at: new Date().toISOString(),
+      }).eq('id', initial.id)
+
       if (!error) {
+        // Sync name / category / unit / prices to cost entries that share the old name+category
+        const nameChanged = name !== initial.name
+        const categoryChanged = category !== initial.category
+        if (nameChanged || categoryChanged || unit !== initial.unit || Number(price) !== Number(initial.price) || Number(stockPrice) !== Number(initial.stock_price)) {
+          await supabase.from('inventory_cost_entries')
+            .update({ item_name: name, category, unit, price: Number(price), stock_price: Number(stockPrice) })
+            .eq('item_name', initial.name)
+            .eq('category', initial.category)
+        }
         await writeLog({ inventory_id: initial.id, item_name: name, action: 'updated', old_quantity: Number(initial.quantity), new_quantity: Number(quantity), changed_by: 'admin' })
+        toast.success('Item updated')
+        onSaved()
+      } else {
+        toast.error('Failed: ' + error.message)
       }
+
     } else {
-      const { data: inserted, error: insertErr } = await supabase.from('inventory').insert(payload).select('id').single()
-      error = insertErr
-      if (!error && inserted) {
-        await Promise.all([
-          writeLog({ inventory_id: inserted.id, item_name: name, action: 'added', new_quantity: Number(quantity), changed_by: 'admin' }),
-          supabase.from('inventory_cost_entries').insert({
-            item_name: name,
-            category,
-            unit,
-            quantity: Number(quantity),
-            stock_price: Number(stockPrice),
-            price: Number(price),
-            notes: notes.trim() || null,
-            date: date || new Date().toISOString().split('T')[0],
-          }),
-        ])
+      // ── ADD MODE ── check for existing item with same name (case-insensitive) + category
+      const { data: existing } = await supabase
+        .from('inventory')
+        .select('id, quantity')
+        .ilike('name', name.trim())
+        .eq('category', category)
+        .eq('branch_id', COMMISSARY_ID)
+        .maybeSingle()
+
+      if (existing) {
+        // Merge: add qty to existing row
+        const newQty = Number(existing.quantity) + Number(quantity)
+        const { error } = await supabase.from('inventory').update({
+          quantity: newQty,
+          unit, price: Number(price), stock_price: Number(stockPrice),
+          notes: notes.trim() || null,
+          date: dateVal,
+          updated_at: new Date().toISOString(),
+        }).eq('id', existing.id)
+
+        if (!error) {
+          await Promise.all([
+            writeLog({ inventory_id: existing.id, item_name: name, action: 'updated', old_quantity: Number(existing.quantity), new_quantity: newQty, note: 'qty added', changed_by: 'admin' }),
+            supabase.from('inventory_cost_entries').insert({
+              item_name: name, category, unit,
+              quantity: Number(quantity),
+              stock_price: Number(stockPrice),
+              price: Number(price),
+              notes: notes.trim() || null,
+              date: dateVal,
+            }),
+          ])
+          toast.success('Quantity added to existing item')
+          onSaved()
+        } else {
+          toast.error('Failed: ' + error.message)
+        }
+
+      } else {
+        // New item — full insert
+        const { data: inserted, error: insertErr } = await supabase.from('inventory').insert({
+          name, category, unit,
+          quantity: Number(quantity),
+          min_quantity: Number(minQty),
+          price: Number(price),
+          stock_price: Number(stockPrice),
+          notes: notes.trim() || null,
+          date: dateVal,
+          branch_id: COMMISSARY_ID,
+          updated_at: new Date().toISOString(),
+        }).select('id').single()
+
+        if (!insertErr && inserted) {
+          await Promise.all([
+            writeLog({ inventory_id: inserted.id, item_name: name, action: 'added', new_quantity: Number(quantity), changed_by: 'admin' }),
+            supabase.from('inventory_cost_entries').insert({
+              item_name: name, category, unit,
+              quantity: Number(quantity),
+              stock_price: Number(stockPrice),
+              price: Number(price),
+              notes: notes.trim() || null,
+              date: dateVal,
+            }),
+          ])
+          toast.success('Item added')
+          onSaved()
+        } else {
+          toast.error('Failed: ' + (insertErr?.message ?? ''))
+        }
       }
     }
-    if (error) toast.error('Failed: ' + error.message)
-    else { toast.success(initial ? 'Item updated' : 'Item added'); onSaved() }
     setSaving(false)
   }
 
