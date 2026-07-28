@@ -35,6 +35,7 @@ export function AppShell() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [branchesOpen, setBranchesOpen] = useState(false)
   const [branches, setBranches] = useState<Branch[]>([])
+  const [notifCount, setNotifCount] = useState(0)
 
   const visibleNav = NAV_ITEMS.filter(item => role && item.roles.includes(role))
   const isAdminOrInvestor = role === 'admin' || role === 'investor'
@@ -50,6 +51,34 @@ export function AppShell() {
         if (data) setBranches(data as Branch[])
       })
   }, [isAdminOrInvestor])
+
+  // Fetch notification count (pending orders + low stock for admin)
+  useEffect(() => {
+    if (!role) return
+    async function fetchCount() {
+      let count = 0
+      if (role === 'admin') {
+        const [{ count: pending }, { data: items }] = await Promise.all([
+          supabase.from('branch_orders').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
+          supabase.from('inventory').select('quantity, min_quantity'),
+        ])
+        count = (pending ?? 0) + (items ?? []).filter(i => Number(i.quantity) < Number(i.min_quantity)).length
+      } else if (role === 'branch' && user?.user_metadata?.branch) {
+        const { data: branch } = await supabase.from('branches').select('id').eq('slug', user.user_metadata.branch).single()
+        if (branch) {
+          const { count: pending } = await supabase.from('branch_orders').select('*', { count: 'exact', head: true }).eq('to_branch_id', branch.id).eq('status', 'pending')
+          count = pending ?? 0
+        }
+      }
+      setNotifCount(count)
+    }
+    fetchCount()
+    const ch = supabase.channel('notif-count-rt')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'branch_orders' }, fetchCount)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' }, fetchCount)
+      .subscribe()
+    return () => { supabase.removeChannel(ch) }
+  }, [role, user])
 
   // Auto-open branches section when on a branch page
   useEffect(() => {
@@ -93,6 +122,7 @@ export function AppShell() {
 
         {visibleNav.map(item => {
           const Icon = item.icon
+          const isNotif = item.path === '/notifications'
           return (
             <NavLink
               key={item.path}
@@ -104,7 +134,12 @@ export function AppShell() {
               onClick={() => setMobileOpen(false)}
             >
               <Icon className="w-4 h-4 shrink-0" />
-              {item.label}
+              <span className="flex-1">{item.label}</span>
+              {isNotif && notifCount > 0 && (
+                <span className="ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
+                  {notifCount > 99 ? '99+' : notifCount}
+                </span>
+              )}
             </NavLink>
           )
         })}

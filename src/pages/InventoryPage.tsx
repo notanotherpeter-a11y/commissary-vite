@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth-context'
 import { PageHeader } from '@/components/page-header'
@@ -6,7 +6,7 @@ import { formatDate } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { Plus, Pencil, Trash2, Search, LayoutGrid, List, AlertTriangle, History, ShoppingCart, ClipboardList } from 'lucide-react'
+import { Plus, Pencil, Trash2, Search, LayoutGrid, List, AlertTriangle, History, ShoppingCart, ClipboardList, RotateCcw } from 'lucide-react'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import type { Branch, InventoryItem } from '@/types'
 import { AddInventoryModal } from '@/components/modals/AddInventoryModal'
@@ -48,6 +48,8 @@ export function InventoryPage() {
   const [showAllHistory, setShowAllHistory] = useState(false)
   const [orderingItem, setOrderingItem] = useState<InventoryItem | null>(null)
   const [showItemList, setShowItemList] = useState(false)
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
+  const deleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     supabase.from('branches').select('*').order('name').then(({ data }) => {
@@ -82,14 +84,101 @@ export function InventoryPage() {
   }, [fetchItems])
 
   async function deleteItem(item: InventoryItem) {
-    if (!confirm('Delete this inventory item?')) return
-    await supabase.from('inventory_logs').insert({ inventory_id: item.id, item_name: item.name, action: 'deleted', old_quantity: Number(item.quantity), changed_by: 'admin' })
-    const { error } = await supabase.from('inventory').delete().eq('id', item.id)
-    if (error) toast.error('Failed to delete')
-    else { toast.success('Item deleted'); fetchItems() }
+    // Cancel any previous pending delete
+    if (deleteTimerRef.current) clearTimeout(deleteTimerRef.current)
+
+    setPendingDeleteId(item.id)
+
+    toast(`"${item.name}" deleted`, {
+      duration: 5000,
+      action: {
+        label: 'Undo',
+        onClick: () => {
+          if (deleteTimerRef.current) clearTimeout(deleteTimerRef.current)
+          deleteTimerRef.current = null
+          setPendingDeleteId(null)
+        },
+      },
+    })
+
+    deleteTimerRef.current = setTimeout(async () => {
+      await supabase.from('inventory_logs').insert({ inventory_id: item.id, item_name: item.name, action: 'deleted', old_quantity: Number(item.quantity), changed_by: 'admin', snapshot: { ...item } })
+      const { error } = await supabase.from('inventory').delete().eq('id', item.id)
+      if (error) { toast.error('Failed to delete'); setPendingDeleteId(null) }
+      else { setPendingDeleteId(null); fetchItems() }
+      deleteTimerRef.current = null
+    }, 5000)
   }
 
-  const allFiltered = items.filter(i => i.name.toLowerCase().includes(search.toLowerCase()) || i.category.toLowerCase().includes(search.toLowerCase()))
+  async function revertItem(item: InventoryItem) {
+    // Fetch the most recent log entry for this item (any action)
+    const { data: allLogs } = await supabase
+      .from('inventory_logs')
+      .select('snapshot, action, created_at')
+      .eq('inventory_id', item.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+
+    const latest = allLogs?.[0]
+    if (!latest) {
+      toast.error('No history found for this item')
+      return
+    }
+
+    // If the last action was 'added' with no snapshot → undo by deleting the item
+    if (latest.action === 'added' && !latest.snapshot) {
+      await supabase.from('inventory_logs').insert({
+        inventory_id: item.id,
+        item_name: item.name,
+        action: 'deleted',
+        old_quantity: Number(item.quantity),
+        note: 'Reverted — item removed (undo add)',
+        changed_by: 'admin',
+        snapshot: { ...item },
+      })
+      const { error } = await supabase.from('inventory').delete().eq('id', item.id)
+      if (error) { toast.error('Failed to revert: ' + error.message); return }
+      toast.success(`"${item.name}" removed — add reverted`)
+      fetchItems()
+      return
+    }
+
+    const snap = latest.snapshot as Record<string, unknown> | null
+    if (!snap) {
+      toast.error('No previous state found — make an edit first')
+      return
+    }
+
+    const { error } = await supabase.from('inventory').update({
+      name: snap.name,
+      category: snap.category,
+      unit: snap.unit,
+      quantity: snap.quantity,
+      price: snap.price,
+      stock_price: snap.stock_price,
+      notes: snap.notes ?? null,
+      date: snap.date ?? null,
+      updated_at: new Date().toISOString(),
+    }).eq('id', item.id)
+
+    if (error) { toast.error('Failed to revert: ' + error.message); return }
+
+    await supabase.from('inventory_logs').insert({
+      inventory_id: item.id,
+      item_name: String(snap.name ?? item.name),
+      action: 'updated',
+      old_quantity: Number(item.quantity),
+      new_quantity: Number(snap.quantity ?? 0),
+      note: 'Reverted to previous state',
+      changed_by: 'admin',
+      snapshot: { ...item },
+    })
+
+    toast.success(`"${item.name}" reverted to previous state`)
+    fetchItems()
+  }
+
+  const allFiltered = items.filter(i => i.id !== pendingDeleteId && (i.name.toLowerCase().includes(search.toLowerCase()) || i.category.toLowerCase().includes(search.toLowerCase())))
   // Branches only see items that have a unit price set
   const filtered = isBranch ? allFiltered.filter(i => Number(i.price) > 0) : allFiltered
   const lowStock = filtered.filter(i => isAdmin && Number(i.quantity) < Number(i.min_quantity))
@@ -227,6 +316,7 @@ export function InventoryPage() {
                         {isAdmin && (
                           <>
                             <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-500" title="View history" onClick={() => setHistoryItem(item as InventoryItem & { branches?: { name: string } })}><History className="w-3.5 h-3.5" /></Button>
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-sky-500 hover:text-sky-700 hover:bg-sky-50" title="Revert to previous state" onClick={() => revertItem(item)}><RotateCcw className="w-3.5 h-3.5" /></Button>
                             <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditing(item)}><Pencil className="w-3.5 h-3.5" /></Button>
                             <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500" onClick={() => deleteItem(item)}><Trash2 className="w-3.5 h-3.5" /></Button>
                           </>
@@ -265,6 +355,7 @@ export function InventoryPage() {
                   {isAdmin && (
                     <>
                       <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-500" onClick={() => setHistoryItem(item as InventoryItem & { branches?: { name: string } })}><History className="w-3 h-3" /></Button>
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-sky-500 hover:text-sky-700 hover:bg-sky-50" title="Revert to previous state" onClick={() => revertItem(item)}><RotateCcw className="w-3 h-3" /></Button>
                       <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditing(item)}><Pencil className="w-3 h-3" /></Button>
                       <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500" onClick={() => deleteItem(item)}><Trash2 className="w-3 h-3" /></Button>
                     </>
@@ -334,14 +425,6 @@ export function InventoryPage() {
                   const dayCost = dayEntries.reduce((s, e) => s + Number(e.stock_price ?? 0) * Number(e.quantity ?? 0), 0)
                   const dayValue = dayEntries.reduce((s, e) => s + Number(e.price ?? 0) * Number(e.quantity ?? 0), 0)
                   const dayProfit = dayValue - dayCost
-                  const ids = dayEntries.map(e => e.id)
-
-                  async function deleteCard() {
-                    if (!confirm(`Delete all ${ids.length} cost entr${ids.length !== 1 ? 'ies' : 'y'} for ${dateKey !== 'No Date' ? formatDate(dateKey) : 'No Date'}?`)) return
-                    await supabase.from('inventory_cost_entries').delete().in('id', ids)
-                    fetchCostEntries()
-                  }
-
                   return (
                     <div key={dateKey} className="bg-white rounded-lg border overflow-hidden">
                       {/* Date header */}
@@ -351,9 +434,6 @@ export function InventoryPage() {
                           <span className="text-blue-600 font-medium">Cost: {fmt(dayCost)}</span>
                           <span className="text-amber-600 font-medium">Value: {fmt(dayValue)}</span>
                           <span className={`font-semibold ${dayProfit >= 0 ? 'text-green-600' : 'text-red-500'}`}>Profit: {fmt(dayProfit)}</span>
-                          <Button variant="ghost" size="icon" className="h-6 w-6 text-red-400 hover:text-red-600 hover:bg-red-50 ml-1" title="Delete this date's entries" onClick={deleteCard}>
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </Button>
                         </div>
                       </div>
                       <Table>
@@ -477,7 +557,7 @@ export function InventoryPage() {
       {orderingItem && userBranch && (
         <OrderItemModal item={orderingItem} userBranch={userBranch} onClose={() => setOrderingItem(null)} onSaved={() => setOrderingItem(null)} />
       )}
-      {showItemList && <ItemListModal onClose={() => { setShowItemList(false); fetchItems() }} />}
+      {showItemList && <ItemListModal onClose={() => { setShowItemList(false); fetchItems() }} onCostChanged={fetchCostEntries} />}
     </div>
   )
 }

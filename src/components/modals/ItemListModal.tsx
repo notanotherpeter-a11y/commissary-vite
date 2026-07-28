@@ -13,6 +13,7 @@ import { cn } from '@/lib/utils'
 
 interface Props {
   onClose: () => void
+  onCostChanged?: () => void
 }
 
 type AdjustMode = 'add' | 'subtract'
@@ -21,10 +22,11 @@ interface AdjustState {
   itemId: string
   mode: AdjustMode
   value: string
-  price: string
+  price: string      // stock price (cost)
+  unitPrice: string  // selling price
 }
 
-export function ItemListModal({ onClose }: Props) {
+export function ItemListModal({ onClose, onCostChanged }: Props) {
   const [items, setItems] = useState<InventoryItem[]>([])
   const [loading, setLoading] = useState(true)
   const [adjust, setAdjust] = useState<AdjustState | null>(null)
@@ -44,8 +46,10 @@ export function ItemListModal({ onClose }: Props) {
     if (!adjust || adjust.itemId !== item.id) return
     const amount = Number(adjust.value)
     if (!amount || amount <= 0) { toast.error('Enter a valid amount'); return }
-    const price = adjust.mode === 'add' ? Number(adjust.price) : undefined
-    if (adjust.mode === 'add' && (!price || price <= 0)) { toast.error('Enter a valid price'); return }
+    const stockPrice = adjust.mode === 'add' ? Number(adjust.price) : undefined
+    const unitPrice  = adjust.mode === 'add' ? Number(adjust.unitPrice) : undefined
+    if (adjust.mode === 'add' && (!stockPrice || stockPrice <= 0)) { toast.error('Enter a valid stock price'); return }
+    if (adjust.mode === 'add' && (!unitPrice  || unitPrice  <= 0)) { toast.error('Enter a valid unit price'); return }
     setSaving(true)
     try {
       const { data: { session } } = await supabase.auth.getSession()
@@ -55,11 +59,16 @@ export function ItemListModal({ onClose }: Props) {
           'Content-Type': 'application/json',
           ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
         },
-        body: JSON.stringify({ inventoryId: item.id, mode: adjust.mode, amount, ...(adjust.mode === 'add' ? { price } : {}) }),
+        body: JSON.stringify({
+          inventoryId: item.id,
+          mode: adjust.mode,
+          amount,
+          ...(adjust.mode === 'add' ? { price: stockPrice, unitPrice } : {}),
+        }),
       })
       const json = await res.json()
       if (!res.ok) toast.error(json.error ?? 'Failed to adjust stock')
-      else { toast.success(json.message); setAdjust(null); fetchItems() }
+      else { toast.success(json.message); setAdjust(null); fetchItems(); if (adjust?.mode === 'add') onCostChanged?.() }
     } catch { toast.error('Network error — please try again') }
     setSaving(false)
   }
@@ -68,14 +77,18 @@ export function ItemListModal({ onClose }: Props) {
     if (!confirm(`Delete "${item.name}"?`)) return
     const { error } = await supabase.from('inventory').delete().eq('id', item.id)
     if (error) { toast.error('Failed to delete') } else {
-      await supabase.from('inventory_logs').insert({ inventory_id: item.id, item_name: item.name, action: 'deleted', old_quantity: Number(item.quantity), changed_by: 'admin' })
+      await supabase.from('inventory_logs').insert({ inventory_id: item.id, item_name: item.name, action: 'deleted', old_quantity: Number(item.quantity), changed_by: 'admin', snapshot: { ...item } })
       toast.success(`"${item.name}" deleted`)
       fetchItems()
     }
   }
 
-  function startAdjust(itemId: string, mode: AdjustMode, currentPrice?: number) {
-    setAdjust({ itemId, mode, value: '', price: mode === 'add' && currentPrice ? String(currentPrice) : '' })
+  function startAdjust(itemId: string, mode: AdjustMode, currentStockPrice?: number, currentUnitPrice?: number) {
+    setAdjust({
+      itemId, mode, value: '',
+      price: mode === 'add' && currentStockPrice ? String(currentStockPrice) : '',
+      unitPrice: mode === 'add' && currentUnitPrice ? String(currentUnitPrice) : '',
+    })
   }
 
   return (
@@ -140,23 +153,37 @@ export function ItemListModal({ onClose }: Props) {
                             </Button>
                           </div>
                           {adjust.mode === 'add' && (
-                            <div className="flex items-center gap-2 pl-1">
-                              <span className="text-xs text-slate-500 shrink-0">Unit Price (₱)</span>
-                              <Input type="number" min="0" step="0.01" placeholder="0.00" value={adjust.price}
-                                onChange={e => setAdjust(a => a ? { ...a, price: e.target.value } : null)}
-                                onKeyDown={e => { if (e.key === 'Enter') handleAdjust(item); if (e.key === 'Escape') setAdjust(null) }}
-                                className="h-7 text-sm flex-1" />
-                              {adjust.price && adjust.value && (
-                                <span className="text-xs font-semibold text-slate-700 shrink-0">
-                                  = ₱{(Number(adjust.price) * Number(adjust.value)).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
-                                </span>
-                              )}
+                            <div className="space-y-1.5 pl-1">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-slate-500 shrink-0 w-24">Stock Price (₱)</span>
+                                <Input type="number" min="0" step="0.01" placeholder="0.00" value={adjust.price}
+                                  onChange={e => setAdjust(a => a ? { ...a, price: e.target.value } : null)}
+                                  onKeyDown={e => { if (e.key === 'Escape') setAdjust(null) }}
+                                  className="h-7 text-sm flex-1" />
+                                {adjust.price && adjust.value && (
+                                  <span className="text-xs font-semibold text-blue-600 shrink-0">
+                                    = ₱{(Number(adjust.price) * Number(adjust.value)).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-slate-500 shrink-0 w-24">Unit Price (₱)</span>
+                                <Input type="number" min="0" step="0.01" placeholder="0.00" value={adjust.unitPrice}
+                                  onChange={e => setAdjust(a => a ? { ...a, unitPrice: e.target.value } : null)}
+                                  onKeyDown={e => { if (e.key === 'Enter') handleAdjust(item); if (e.key === 'Escape') setAdjust(null) }}
+                                  className="h-7 text-sm flex-1" />
+                                {adjust.unitPrice && adjust.value && (
+                                  <span className="text-xs font-semibold text-amber-600 shrink-0">
+                                    = ₱{(Number(adjust.unitPrice) * Number(adjust.value)).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           )}
                         </div>
                       ) : (
                         <div className="flex gap-1.5 mt-2">
-                          <Button size="sm" variant="outline" className="flex-1 h-7 text-xs text-green-700 border-green-200 hover:bg-green-50" onClick={() => startAdjust(item.id, 'add', item.price)}>
+                          <Button size="sm" variant="outline" className="flex-1 h-7 text-xs text-green-700 border-green-200 hover:bg-green-50" onClick={() => startAdjust(item.id, 'add', item.stock_price, item.price)}>
                             <Plus className="w-3 h-3 mr-1" /> Add Stock
                           </Button>
                           <Button size="sm" variant="outline" className="flex-1 h-7 text-xs text-red-600 border-red-200 hover:bg-red-50" onClick={() => startAdjust(item.id, 'subtract')}>

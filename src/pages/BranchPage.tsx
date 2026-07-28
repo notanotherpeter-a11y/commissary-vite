@@ -8,7 +8,7 @@ import { KpiCard } from '@/components/kpi-card'
 import { formatCurrency, formatDate, MONTHS, getCurrentMonthYear } from '@/lib/utils'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
-import { Plus, Pencil, Trash2, CheckCircle, XCircle, Clock } from 'lucide-react'
+import { Plus, Pencil, Trash2, CheckCircle, XCircle, Clock, FileDown } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
@@ -16,6 +16,8 @@ import type { Branch, Sale, BranchOrder } from '@/types'
 import { AddSaleModal } from '@/components/modals/AddSaleModal'
 import { AddOrderModal } from '@/components/modals/AddOrderModal'
 import { toast } from 'sonner'
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
 
 export function BranchPage() {
   const { slug } = useParams<{ slug: string }>()
@@ -82,10 +84,110 @@ export function BranchPage() {
 
   const grossSales = sales.reduce((s, r) => s + Number(r.amount), 0)
   const years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i)
+  const [exporting, setExporting] = useState(false)
+
+  async function handleExportPDF() {
+    if (!branch) return
+    setExporting(true)
+    try {
+      const monthLabel = `${MONTHS[month - 1]} ${year}`
+      const amber: [number, number, number] = [245, 158, 11]
+
+      const doc = new jsPDF()
+      const pw = doc.internal.pageSize.getWidth()
+
+      // Header
+      doc.setFillColor(245, 158, 11)
+      doc.rect(0, 0, pw, 36, 'F')
+      doc.setTextColor(255, 255, 255)
+      doc.setFontSize(18)
+      doc.setFont('helvetica', 'bold')
+      doc.text(branch.name, pw / 2, 13, { align: 'center' })
+      doc.setFontSize(11)
+      doc.setFont('helvetica', 'normal')
+      doc.text(`Branch Report — ${monthLabel}`, pw / 2, 22, { align: 'center' })
+      doc.setFontSize(8)
+      doc.text(`Generated: ${new Date().toLocaleString('en-PH')}`, pw / 2, 30, { align: 'center' })
+      doc.setTextColor(0, 0, 0)
+
+      let curY = 42
+
+      const nextSection = (title: string, count: number) => {
+        if (curY > 240) { doc.addPage(); curY = 16 }
+        doc.setFont('helvetica', 'bold')
+        doc.setFontSize(10)
+        doc.setTextColor(71, 85, 105)
+        doc.text(`${title}  (${count} record${count !== 1 ? 's' : ''})`, 14, curY)
+        doc.setTextColor(0, 0, 0)
+        doc.setFont('helvetica', 'normal')
+        curY += 2
+      }
+
+      const renderTable = (head: string[][], body: string[][], footRow?: string[]) => {
+        autoTable(doc, {
+          startY: curY,
+          head,
+          body: body.length > 0 ? body : [Array(head[0].length).fill('—')],
+          ...(footRow ? { foot: [footRow], footStyles: { fillColor: [248, 250, 252], textColor: [30, 30, 30], fontStyle: 'bold' } } : {}),
+          theme: 'striped',
+          headStyles: { fillColor: amber, textColor: 255, fontSize: 8 },
+          bodyStyles: { fontSize: 8 },
+          margin: { left: 14, right: 14 },
+        })
+        curY = (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8
+      }
+
+      // KPI summary box
+      doc.setFillColor(255, 251, 235)
+      doc.setDrawColor(245, 158, 11)
+      doc.roundedRect(14, curY, pw - 28, 18, 2, 2, 'FD')
+      doc.setFontSize(9)
+      doc.setFont('helvetica', 'bold')
+      doc.text(`Gross Sales: ${formatCurrency(grossSales)}`, 20, curY + 7)
+      doc.text(`Orders: ${orders.length}`, 20, curY + 14)
+      doc.setFont('helvetica', 'normal')
+      curY += 24
+
+      // Sales section
+      nextSection('Sales', sales.length)
+      renderTable(
+        [['Date', 'Amount', 'Notes']],
+        sales.map(s => [formatDate(s.date), formatCurrency(Number(s.amount)), s.notes ?? '—']),
+        sales.length > 0 ? ['Total', formatCurrency(grossSales), ''] : undefined,
+      )
+
+      // Orders section
+      nextSection('Branch Orders', orders.length)
+      renderTable(
+        [['Date', 'Item', 'Qty', 'From', 'To', 'Amount', 'Status']],
+        orders.map(o => {
+          const oo = o as BranchOrder & { from_branch?: { name: string }; to_branch?: { name: string } }
+          return [
+            formatDate(oo.date),
+            oo.item,
+            String(oo.quantity ?? '—'),
+            oo.from_branch?.name ?? '—',
+            oo.to_branch?.name ?? '—',
+            oo.amount ? formatCurrency(Number(oo.amount)) : '—',
+            oo.status ?? '—',
+          ]
+        }),
+      )
+
+      doc.save(`${branch.name.replace(/\s+/g, '_')}_Report_${monthLabel.replace(' ', '_')}.pdf`)
+      toast.success(`Report exported: ${branch.name} — ${monthLabel}`)
+    } catch (err) {
+      console.error(err)
+      toast.error('Failed to export PDF')
+    } finally {
+      setExporting(false)
+    }
+  }
 
   async function deleteSale(id: string) {
     if (!confirm('Delete?')) return
-    await supabase.from('sales').delete().eq('id', id)
+    const { error } = await supabase.from('sales').delete().eq('id', id)
+    if (error) { toast.error('Failed to delete'); return }
     toast.success('Deleted')
     fetchData()
   }
@@ -103,6 +205,19 @@ export function BranchPage() {
       <PageHeader
         title={branch.name}
         description="Branch performance and records"
+        action={
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-amber-400 text-amber-700 hover:bg-amber-50"
+            disabled={exporting}
+            onClick={handleExportPDF}
+          >
+            {exporting
+              ? <><span className="w-4 h-4 mr-1 border-2 border-amber-500 border-t-transparent rounded-full animate-spin inline-block" />Exporting…</>
+              : <><FileDown className="w-4 h-4 mr-1" />Export PDF</>}
+          </Button>
+        }
       />
 
       <div className="flex gap-2 mb-4">

@@ -12,7 +12,7 @@ import type { Branch, Sale } from '@/types'
 export function BranchSalesPage() {
   const { role: _role, branch: _userBranchSlug } = useAuth()
   const now = getCurrentMonthYear()
-  const [period, setPeriod] = useState<'monthly' | 'quarterly' | 'yearly'>('monthly')
+  const [period, setPeriod] = useState<'monthly' | 'yearly'>('monthly')
   const [month, setMonth] = useState(now.month)
   const [year, setYear] = useState(now.year)
   const [branches, setBranches] = useState<Branch[]>([])
@@ -31,12 +31,7 @@ export function BranchSalesPage() {
       const lastDay = new Date(year, month, 0).getDate()
       return { start: `${year}-${String(month).padStart(2, '0')}-01`, end: `${year}-${String(month).padStart(2, '0')}-${lastDay}` }
     }
-    if (period === 'yearly') return { start: `${year}-01-01`, end: `${year}-12-31` }
-    const q = Math.ceil(month / 3)
-    const qStart = (q - 1) * 3 + 1
-    const qEnd = q * 3
-    const lastDay = new Date(year, qEnd, 0).getDate()
-    return { start: `${year}-${String(qStart).padStart(2, '0')}-01`, end: `${year}-${String(qEnd).padStart(2, '0')}-${lastDay}` }
+    return { start: `${year}-01-01`, end: `${year}-12-31` }
   }, [period, month, year])
 
   const fetchData = useCallback(async () => {
@@ -78,12 +73,12 @@ export function BranchSalesPage() {
       </div>
 
       <div className="flex flex-wrap gap-2 mb-4">
-        {(['monthly', 'quarterly', 'yearly'] as const).map(p => (
+        {(['monthly', 'yearly'] as const).map(p => (
           <button key={p} onClick={() => setPeriod(p)} className={`px-3 py-1.5 text-sm rounded-md font-medium transition-colors ${period === p ? 'bg-slate-900 text-white' : 'bg-white border text-slate-600 hover:bg-slate-50'}`}>
             {p.charAt(0).toUpperCase() + p.slice(1)}
           </button>
         ))}
-        {period !== 'yearly' && (
+        {period === 'monthly' && (
           <Select value={String(month)} onValueChange={(v) => setMonth(Number(v ?? 0))}>
             <SelectTrigger className="w-36 h-8 text-sm"><span className="truncate">{MONTHS[month - 1]}</span></SelectTrigger>
             <SelectContent>{MONTHS.map((m, i) => <SelectItem key={i} value={String(i + 1)}>{m}</SelectItem>)}</SelectContent>

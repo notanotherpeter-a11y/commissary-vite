@@ -36,7 +36,7 @@ export function ReportsPage() {
     const [s, e, o] = await Promise.all([
       supabase.from('sales').select('branch_id,amount,date').gte('date', start).lte('date', end),
       supabase.from('expenses').select('category,amount').gte('date', start).lte('date', end),
-      supabase.from('branch_orders').select('from_branch_id,to_branch_id,item,amount').gte('date', start).lte('date', end),
+      supabase.from('branch_orders').select('from_branch_id,to_branch_id,item,amount').eq('status', 'approved').gte('date', start).lte('date', end),
     ])
     setSales(s.data ?? [])
     setExpenses(e.data ?? [])

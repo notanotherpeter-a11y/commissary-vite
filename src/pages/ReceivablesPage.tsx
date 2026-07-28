@@ -53,10 +53,18 @@ export function ReceivablesPage() {
 
   const fetchReceivables = useCallback(async () => {
     setLoadingRec(true)
-    const { data } = await supabase.from('receivables').select('*, branches(id,slug,name)').order('date', { ascending: false })
+    const lastDay = new Date(year, month, 0).getDate()
+    const start = `${year}-${String(month).padStart(2, '0')}-01`
+    const end = `${year}-${String(month).padStart(2, '0')}-${lastDay}`
+    const { data } = await supabase
+      .from('receivables')
+      .select('*, branches(id,slug,name)')
+      .gte('date', start)
+      .lte('date', end)
+      .order('date', { ascending: false })
     setReceivables(data ?? [])
     setLoadingRec(false)
-  }, [])
+  }, [month, year])
 
   useEffect(() => { fetchReceivables() }, [fetchReceivables])
 
@@ -108,6 +116,17 @@ export function ReceivablesPage() {
           </Button>
         )}
       />
+
+      <div className="flex gap-2 mb-4 flex-wrap">
+        <Select value={String(month)} onValueChange={v => setMonth(Number(v))}>
+          <SelectTrigger className="w-36 h-8 text-sm"><span className="truncate">{MONTHS[month - 1]}</span></SelectTrigger>
+          <SelectContent>{MONTHS.map((m, i) => <SelectItem key={i} value={String(i + 1)}>{m}</SelectItem>)}</SelectContent>
+        </Select>
+        <Select value={String(year)} onValueChange={v => setYear(Number(v))}>
+          <SelectTrigger className="w-24 h-8 text-sm"><SelectValue /></SelectTrigger>
+          <SelectContent>{years.map(y => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}</SelectContent>
+        </Select>
+      </div>
 
       <Tabs defaultValue="receivables">
         <TabsList className="mb-4">
@@ -174,14 +193,6 @@ export function ReceivablesPage() {
 
         <TabsContent value="orders">
           <div className="flex gap-2 mb-4 flex-wrap">
-            <Select value={String(month)} onValueChange={v => setMonth(Number(v))}>
-              <SelectTrigger className="w-36 h-8 text-sm"><span className="truncate">{MONTHS[month - 1]}</span></SelectTrigger>
-              <SelectContent>{MONTHS.map((m, i) => <SelectItem key={i} value={String(i + 1)}>{m}</SelectItem>)}</SelectContent>
-            </Select>
-            <Select value={String(year)} onValueChange={v => setYear(Number(v))}>
-              <SelectTrigger className="w-24 h-8 text-sm"><SelectValue /></SelectTrigger>
-              <SelectContent>{years.map(y => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}</SelectContent>
-            </Select>
             <Select value={branchFilter} onValueChange={v => setBranchFilter(v ?? 'all')}>
               <SelectTrigger className="w-40 h-8 text-sm"><SelectValue placeholder="All Branches" /></SelectTrigger>
               <SelectContent>

@@ -7,7 +7,7 @@ import { formatDate, MONTHS, getCurrentMonthYear } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
-import { CheckCircle, XCircle, Clock, AlertTriangle, ShoppingBag } from 'lucide-react'
+import { CheckCircle, XCircle, Clock, AlertTriangle, ShoppingBag, Truck } from 'lucide-react'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import type { BranchOrder, Branch } from '@/types'
@@ -63,6 +63,14 @@ export function BranchOrdersPage() {
       .subscribe()
     return () => { supabase.removeChannel(ch) }
   }, [fetchOrders])
+
+  async function markDelivered(order: BranchOrder) {
+    setProcessing(order.id)
+    const { error } = await supabase.from('branch_orders').update({ delivered: true }).eq('id', order.id)
+    if (error) toast.error('Failed to mark as delivered')
+    else { toast.success('Marked as delivered'); fetchOrders() }
+    setProcessing(null)
+  }
 
   async function handleAction(order: BranchOrder, action: 'approve' | 'reject') {
     setProcessing(order.id)
@@ -238,7 +246,7 @@ export function BranchOrdersPage() {
                   <TableHead>Qty</TableHead>
                   <TableHead>Unit Price</TableHead>
                   <TableHead>Amount</TableHead>
-                  <TableHead>Notes</TableHead>
+                  <TableHead>Delivery</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="w-28">Action</TableHead>
                 </TableRow>
@@ -268,7 +276,15 @@ export function BranchOrdersPage() {
                       <TableCell className="text-sm font-semibold">
                         {o.amount ? `₱${Number(o.amount).toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '—'}
                       </TableCell>
-                      <TableCell className="text-sm text-slate-500 max-w-[140px] truncate">{o.notes ?? '—'}</TableCell>
+                      <TableCell>
+                        {o.status === 'approved' ? (
+                          o.delivered
+                            ? <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-blue-100 text-blue-700"><Truck className="w-3 h-3" />Delivered</span>
+                            : <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-500"><Clock className="w-3 h-3" />Pending</span>
+                        ) : (
+                          <span className="text-xs text-slate-400">—</span>
+                        )}
+                      </TableCell>
                       <TableCell>
                         <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${st.cls}`}>
                           <Icon className="w-3 h-3" />{st.label}
@@ -300,8 +316,22 @@ export function BranchOrdersPage() {
                               <XCircle className="w-4 h-4" />
                             </Button>
                           </div>
+                        ) : o.status === 'approved' && !o.delivered ? (
+                          <Button
+                            variant="ghost" size="icon"
+                            className="h-7 w-7 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                            title="Mark as Delivered"
+                            disabled={isProcessing}
+                            onClick={() => markDelivered(o)}
+                          >
+                            {isProcessing ? (
+                              <span className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                            ) : (
+                              <Truck className="w-4 h-4" />
+                            )}
+                          </Button>
                         ) : (
-                          <span className="text-xs text-slate-500">—</span>
+                          <span className="text-xs text-slate-400">—</span>
                         )}
                       </TableCell>
                     </TableRow>

@@ -14,7 +14,11 @@ const app = new Hono<{ Bindings: Env }>()
 app.use(
   '/api/*',
   cors({
-    origin: ['https://www.kamayanresto.com', 'http://localhost:5173'],
+    origin: [
+      'https://www.kamayanresto.com',
+      'https://kamayanresto.com',
+      'http://localhost:5173',
+    ],
     allowMethods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
     allowHeaders: ['Content-Type', 'Authorization'],
   })
@@ -182,24 +186,29 @@ app.post('/api/inventory/adjust', async (c) => {
   if (!auth) return c.json({ error: 'Unauthorized' }, 401)
 
   const body = await c.req.json()
-  const { inventoryId, mode, amount, price } = body
+  const { inventoryId, mode, amount, price, unitPrice } = body
   // mode: 'add' | 'subtract'
-  // price: only required for 'add'
+  // price: stock/cost price (required for 'add')
+  // unitPrice: selling price (required for 'add')
 
   if (!inventoryId || !mode || !amount || amount <= 0) {
     return c.json({ error: 'Invalid input' }, 400)
   }
 
   if (mode === 'add' && (!price || price <= 0)) {
-    return c.json({ error: 'Price is required when adding stock' }, 400)
+    return c.json({ error: 'Stock price is required when adding stock' }, 400)
+  }
+
+  if (mode === 'add' && (!unitPrice || unitPrice <= 0)) {
+    return c.json({ error: 'Unit price is required when adding stock' }, 400)
   }
 
   const db = adminDb(c.env)
 
-  // Fetch current inventory item
+  // Fetch current inventory item (include category for cost entry)
   const { data: item, error: fetchErr } = await db
     .from('inventory')
-    .select('id, name, unit, quantity, price')
+    .select('id, name, category, unit, quantity, price, stock_price')
     .eq('id', inventoryId)
     .single()
 
@@ -219,11 +228,15 @@ app.post('/api/inventory/adjust', async (c) => {
   }
 
   // Build update payload
+  // On add: update stock_price (cost) + price (selling) for this batch
   const updatePayload: Record<string, unknown> = {
     quantity: newQty,
     updated_at: new Date().toISOString(),
   }
-  if (mode === 'add') updatePayload.price = price
+  if (mode === 'add') {
+    updatePayload.stock_price = price
+    updatePayload.price = unitPrice
+  }
 
   const { error: updateErr } = await db
     .from('inventory')
@@ -234,8 +247,10 @@ app.post('/api/inventory/adjust', async (c) => {
     return c.json({ error: 'Failed to update inventory: ' + updateErr.message }, 500)
   }
 
-  // Write log
-  await db.from('inventory_logs').insert({
+  const today = new Date().toISOString().split('T')[0]
+
+  // Write log + cost entry (in parallel)
+  const logInsert = db.from('inventory_logs').insert({
     inventory_id: item.id,
     item_name: item.name,
     action: 'updated',
@@ -245,8 +260,22 @@ app.post('/api/inventory/adjust', async (c) => {
       ? `Stock added — ₱${Number(price).toLocaleString('en-PH', { minimumFractionDigits: 2 })} / ${item.unit}`
       : 'Stock subtracted',
     changed_by: (auth.user.user_metadata?.username as string) ?? 'admin',
-    ...(mode === 'add' ? { unit_price: price } : {}),
   })
+
+  const costInsert = mode === 'add'
+    ? db.from('inventory_cost_entries').insert({
+        item_name: item.name,
+        category: item.category,
+        unit: item.unit,
+        quantity: Number(amount),
+        stock_price: Number(price),      // cost price entered by user
+        price: Number(unitPrice),        // selling price entered by user
+        notes: null,
+        date: today,
+      })
+    : Promise.resolve()
+
+  await Promise.all([logInsert, costInsert])
 
   return c.json({
     success: true,

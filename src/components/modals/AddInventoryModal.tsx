@@ -20,6 +20,7 @@ async function writeLog(
     new_quantity?: number | null
     note?: string | null
     changed_by?: string | null
+    snapshot?: Record<string, unknown> | null
   }
 ) {
   await supabase.from('inventory_logs').insert(payload)
@@ -84,7 +85,7 @@ export function AddInventoryModal({ initial, onClose, onSaved }: Props) {
             .eq('item_name', initial.name)
             .eq('category', initial.category)
         }
-        await writeLog({ inventory_id: initial.id, item_name: name, action: 'updated', old_quantity: Number(initial.quantity), new_quantity: Number(quantity), changed_by: 'admin' })
+        await writeLog({ inventory_id: initial.id, item_name: name, action: 'updated', old_quantity: Number(initial.quantity), new_quantity: Number(quantity), changed_by: 'admin', snapshot: { ...initial } as Record<string, unknown> })
         toast.success('Item updated')
         onSaved()
       } else {
@@ -114,7 +115,7 @@ export function AddInventoryModal({ initial, onClose, onSaved }: Props) {
 
         if (!error) {
           await Promise.all([
-            writeLog({ inventory_id: existing.id, item_name: name, action: 'updated', old_quantity: Number(existing.quantity), new_quantity: newQty, note: 'qty added', changed_by: 'admin' }),
+            writeLog({ inventory_id: existing.id, item_name: name, action: 'updated', old_quantity: Number(existing.quantity), new_quantity: newQty, note: 'qty added', changed_by: 'admin', snapshot: { ...existing } as Record<string, unknown> }),
             supabase.from('inventory_cost_entries').insert({
               item_name: name, category, unit,
               quantity: Number(quantity),
