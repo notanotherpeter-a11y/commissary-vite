@@ -28,7 +28,7 @@ export function LoginPage() {
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <img src="/kamayan-logo.png" alt="Kamayan Logo" className="w-36 h-36 object-contain mx-auto" />
-          <p className="text-slate-400 text-sm mt-1">Commissary Management</p>
+          <p className="text-slate-400 text-sm mt-1">Kamayanresto.com</p>
         </div>
         <div className="bg-white rounded-xl shadow-xl p-6">
           <h2 className="text-lg font-semibold text-slate-800 mb-5">Sign in to your account</h2>
@@ -64,7 +64,7 @@ export function LoginPage() {
             </button>
           </form>
         </div>
-        <p className="text-center text-xs text-slate-600 mt-6">© 2026 Kamayan sa Qyusi. All rights reserved.</p>
+        <p className="text-center text-xs text-slate-600 mt-6">© 2026 Kamayanresto.com. All rights reserved.</p>
       </div>
     </div>
   )

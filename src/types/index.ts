@@ -69,7 +69,8 @@ export interface InventoryItem {
   unit: string
   quantity: number
   min_quantity: number
-  price: number
+  price: number        // unit price (selling price to branches)
+  stock_price: number  // cost/purchase price (admin only)
   branch_id: number
   updated_at: string
   branches?: Branch

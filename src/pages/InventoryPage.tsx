@@ -16,7 +16,7 @@ import { ItemListModal } from '@/components/modals/ItemListModal'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 
-type TabView = 'stock' | 'cost'
+type TabView = 'stock' | 'cost' | 'branch_items'
 
 export function InventoryPage() {
   const { role, branch: userBranchSlug } = useAuth()
@@ -66,8 +66,10 @@ export function InventoryPage() {
     else { toast.success('Item deleted'); fetchItems() }
   }
 
-  const filtered = items.filter(i => i.name.toLowerCase().includes(search.toLowerCase()) || i.category.toLowerCase().includes(search.toLowerCase()))
-  const lowStock = filtered.filter(i => Number(i.quantity) < Number(i.min_quantity))
+  const allFiltered = items.filter(i => i.name.toLowerCase().includes(search.toLowerCase()) || i.category.toLowerCase().includes(search.toLowerCase()))
+  // Branches only see items that have a unit price set
+  const filtered = isBranch ? allFiltered.filter(i => Number(i.price) > 0) : allFiltered
+  const lowStock = filtered.filter(i => isAdmin && Number(i.quantity) < Number(i.min_quantity))
 
   // Cost tab computed values
   const itemsWithPrice = items.filter(i => Number(i.price) > 0)
@@ -103,6 +105,7 @@ export function InventoryPage() {
         {([
           { label: 'Stock', value: 'stock' as TabView },
           { label: 'Items Cost', value: 'cost' as TabView },
+          ...(isAdmin ? [{ label: 'Branch Item List', value: 'branch_items' as TabView }] : []),
         ]).map(t => (
           <button
             key={t.value}
@@ -149,18 +152,23 @@ export function InventoryPage() {
                 <TableHead>Unit</TableHead>
                 <TableHead className="text-right">Qty</TableHead>
                 {isAdmin && <TableHead className="text-right">Min Qty</TableHead>}
+                {isAdmin && <TableHead className="text-right">Stock Price</TableHead>}
                 <TableHead className="text-right">Unit Price</TableHead>
+                {isAdmin && <TableHead className="text-right">Profit</TableHead>}
                 <TableHead>Updated</TableHead>
                 <TableHead className="w-24" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
-                <TableRow><TableCell colSpan={8} className="text-center py-8 text-slate-500">Loading…</TableCell></TableRow>
+                <TableRow><TableCell colSpan={isAdmin ? 10 : 7} className="text-center py-8 text-slate-500">Loading…</TableCell></TableRow>
               ) : filtered.length === 0 ? (
-                <TableRow><TableCell colSpan={8} className="text-center py-8 text-slate-500">No items found.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={isAdmin ? 10 : 7} className="text-center py-8 text-slate-500">No items found.</TableCell></TableRow>
               ) : filtered.map(item => {
                 const isLow = isAdmin && Number(item.quantity) < Number(item.min_quantity)
+                const unitPrice = Number(item.price ?? 0)
+                const stockPrice = Number(item.stock_price ?? 0)
+                const profit = unitPrice - stockPrice
                 return (
                   <TableRow key={item.id} className={isLow ? 'bg-red-50' : ''}>
                     <TableCell className="font-medium">
@@ -171,9 +179,19 @@ export function InventoryPage() {
                     <TableCell className="text-sm text-slate-500">{item.unit}</TableCell>
                     <TableCell className={cn('text-right font-semibold', isLow ? 'text-red-600' : 'text-slate-900')}>{item.quantity}</TableCell>
                     {isAdmin && <TableCell className="text-right text-slate-500">{item.min_quantity}</TableCell>}
+                    {isAdmin && (
+                      <TableCell className="text-right text-slate-500">
+                        {stockPrice > 0 ? `₱${stockPrice.toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '---'}
+                      </TableCell>
+                    )}
                     <TableCell className="text-right font-medium text-slate-700">
-                      {item.price ? `₱${Number(item.price).toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '---'}
+                      {unitPrice > 0 ? `₱${unitPrice.toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '---'}
                     </TableCell>
+                    {isAdmin && (
+                      <TableCell className={cn('text-right font-semibold', profit > 0 ? 'text-green-600' : profit < 0 ? 'text-red-500' : 'text-slate-400')}>
+                        {unitPrice > 0 && stockPrice > 0 ? `₱${profit.toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '---'}
+                      </TableCell>
+                    )}
                     <TableCell className="text-xs text-slate-500">{item.updated_at ? formatDate(item.updated_at.split('T')[0]) : '---'}</TableCell>
                     <TableCell>
                       <div className="flex gap-1 justify-end">
@@ -296,6 +314,53 @@ export function InventoryPage() {
                     ₱{totalStockValue.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
                   </TableCell>
                 </TableRow>
+              </TableBody>
+            </Table>
+          </div>
+        </>
+      )}
+
+      {tab === 'branch_items' && isAdmin && (
+        <>
+          {/* summary */}
+          <div className="grid grid-cols-2 gap-3 mb-6">
+            <div className="bg-white rounded-lg border p-4">
+              <p className="text-xs text-slate-500 mb-1">Items with Unit Price</p>
+              <p className="text-xl font-bold text-amber-600">{items.filter(i => Number(i.price) > 0).length}</p>
+            </div>
+            <div className="bg-white rounded-lg border p-4">
+              <p className="text-xs text-slate-500 mb-1">Hidden from Branches</p>
+              <p className="text-xl font-bold text-slate-800">{items.filter(i => Number(i.price) === 0).length}</p>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg border overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-slate-50">
+                  <TableHead>Name</TableHead>
+                  <TableHead>Category</TableHead>
+                  <TableHead>Unit</TableHead>
+                  <TableHead className="text-right">Qty</TableHead>
+                  <TableHead className="text-right">Unit Price</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {loading ? (
+                  <TableRow><TableCell colSpan={5} className="text-center py-8 text-slate-500">Loading…</TableCell></TableRow>
+                ) : items.filter(i => Number(i.price) > 0).length === 0 ? (
+                  <TableRow><TableCell colSpan={5} className="text-center py-8 text-slate-500">No items with a unit price yet.</TableCell></TableRow>
+                ) : items.filter(i => Number(i.price) > 0).sort((a, b) => a.name.localeCompare(b.name)).map(item => (
+                  <TableRow key={item.id}>
+                    <TableCell className="font-medium">{item.name}</TableCell>
+                    <TableCell><Badge variant="secondary">{item.category}</Badge></TableCell>
+                    <TableCell className="text-sm text-slate-500">{item.unit}</TableCell>
+                    <TableCell className="text-right font-semibold text-slate-900">{item.quantity}</TableCell>
+                    <TableCell className="text-right font-semibold text-amber-700">
+                      ₱{Number(item.price).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                    </TableCell>
+                  </TableRow>
+                ))}
               </TableBody>
             </Table>
           </div>

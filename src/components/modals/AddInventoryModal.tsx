@@ -47,6 +47,7 @@ export function AddInventoryModal({ initial, onClose, onSaved }: Props) {
   const [quantity, setQuantity] = useState(String(initial?.quantity ?? '0'))
   const [minQty, setMinQty] = useState(String(initial?.min_quantity ?? '0'))
   const [price, setPrice] = useState(String(initial?.price ?? '0'))
+  const [stockPrice, setStockPrice] = useState(String(initial?.stock_price ?? '0'))
   const [saving, setSaving] = useState(false)
 
   const category = categorySelect === '__custom__' ? customCategory : categorySelect
@@ -60,6 +61,7 @@ export function AddInventoryModal({ initial, onClose, onSaved }: Props) {
       quantity: Number(quantity),
       min_quantity: Number(minQty),
       price: Number(price),
+      stock_price: Number(stockPrice),
       branch_id: COMMISSARY_ID,
       updated_at: new Date().toISOString(),
     }
@@ -119,8 +121,15 @@ export function AddInventoryModal({ initial, onClose, onSaved }: Props) {
               <Label>Min Quantity</Label>
               <Input type="number" min="0" step="0.01" value={minQty} onChange={e => setMinQty(e.target.value)} />
             </div>
-            <div className="col-span-2 space-y-1.5">
-              <Label>Unit Price (₱)</Label>
+            <div className="space-y-1.5">
+              <Label>Stock Price (₱) <span className="text-xs text-slate-400">cost</span></Label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">₱</span>
+                <Input type="number" min="0" step="0.01" value={stockPrice} onChange={e => setStockPrice(e.target.value)} className="pl-7" placeholder="0.00" />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Unit Price (₱) <span className="text-xs text-slate-400">selling</span></Label>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">₱</span>
                 <Input type="number" min="0" step="0.01" value={price} onChange={e => setPrice(e.target.value)} className="pl-7" placeholder="0.00" />

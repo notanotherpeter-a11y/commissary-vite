@@ -27,7 +27,7 @@ export function AddOrderModal({ toBranchId, toBranchName, onClose, onSaved }: Pr
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    supabase.from('inventory').select('*').order('name').then(({ data }) => {
+    supabase.from('inventory').select('*').gt('price', 0).order('name').then(({ data }) => {
       setInventoryItems(data ?? [])
       setLoadingItems(false)
     })
