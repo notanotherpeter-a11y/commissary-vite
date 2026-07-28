@@ -9,9 +9,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Pencil, Loader2, Eye, EyeOff, Trash2, AlertTriangle } from 'lucide-react'
+import { Pencil, Loader2, Eye, EyeOff, Trash2, AlertTriangle, FileDown } from 'lucide-react'
 import { toast } from 'sonner'
-import { MONTHS } from '@/lib/utils'
+import { MONTHS, formatCurrency } from '@/lib/utils'
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
 
 interface AuthUser {
   id: string
@@ -70,6 +72,24 @@ export function SettingsPage() {
   const [deleting, setDeleting] = useState<AuthUser | null>(null)
   const [confirmDelete, setConfirmDelete] = useState('')
 
+  // Clear inventory
+  const [invClearItems, setInvClearItems] = useState({ inventory: false, inventory_cost_entries: false })
+  const [invClearConfirmOpen, setInvClearConfirmOpen] = useState(false)
+  const [invClearConfirmText, setInvClearConfirmText] = useState('')
+  const [invClearing, setInvClearing] = useState(false)
+
+  async function handleClearInventory() {
+    if (invClearConfirmText !== 'DELETE') return
+    setInvClearing(true)
+    if (invClearItems.inventory) await supabase.from('inventory').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+    if (invClearItems.inventory_cost_entries) await supabase.from('inventory_cost_entries').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+    setInvClearing(false)
+    setInvClearConfirmOpen(false)
+    setInvClearConfirmText('')
+    setInvClearItems({ inventory: false, inventory_cost_entries: false })
+    toast.success('Inventory data cleared')
+  }
+
   // Clear month data
   const now = new Date()
   const [clearYear, setClearYear] = useState(now.getFullYear())
@@ -78,6 +98,7 @@ export function SettingsPage() {
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false)
   const [clearConfirmText, setClearConfirmText] = useState('')
   const [clearing, setClearing] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const CLEARABLE_TABLES = [
     { key: 'sales',           label: 'Sales' },
     { key: 'expenses',        label: 'Expenses' },
@@ -112,6 +133,143 @@ export function SettingsPage() {
       toast.error('Failed: ' + data.error)
     } else {
       toast.success(`Cleared ${data.total} records from ${MONTHS[clearMonth - 1]} ${clearYear}`)
+    }
+  }
+
+  async function handleExportPDF() {
+    setExporting(true)
+    try {
+      const lastDay = new Date(clearYear, clearMonth, 0).getDate()
+      const start = `${clearYear}-${String(clearMonth).padStart(2, '0')}-01`
+      const end   = `${clearYear}-${String(clearMonth).padStart(2, '0')}-${lastDay}`
+      const monthLabel = `${MONTHS[clearMonth - 1]} ${clearYear}`
+
+      const [s, e, bo, sp, r, il] = await Promise.all([
+        supabase.from('sales').select('date, amount, notes, branches(name)').gte('date', start).lte('date', end).order('date'),
+        supabase.from('expenses').select('date, category, amount, notes, branches(name)').gte('date', start).lte('date', end).order('date'),
+        supabase.from('branch_orders').select('date, item, quantity, amount, status, from_branch:from_branch_id(name), to_branch:to_branch_id(name)').gte('date', start).lte('date', end).order('date'),
+        supabase.from('salary_payments').select('date, amount, notes, employees(name)').gte('date', start).lte('date', end).order('date'),
+        supabase.from('receivables').select('date, description, amount, branches(name)').gte('date', start).lte('date', end).order('date'),
+        supabase.from('inventory_logs').select('created_at, item_name, action, quantity_change, changed_by').gte('created_at', start + 'T00:00:00').lte('created_at', end + 'T23:59:59').order('created_at'),
+      ])
+
+      const doc = new jsPDF()
+      const pw = doc.internal.pageSize.getWidth()
+      const amber: [number, number, number] = [245, 158, 11]
+      const slate: [number, number, number] = [71, 85, 105]
+
+      // --- Header ---
+      doc.setFillColor(245, 158, 11)
+      doc.rect(0, 0, pw, 36, 'F')
+      doc.setTextColor(255, 255, 255)
+      doc.setFontSize(18)
+      doc.setFont('helvetica', 'bold')
+      doc.text('Kamayan sa Qyusi', pw / 2, 14, { align: 'center' })
+      doc.setFontSize(11)
+      doc.setFont('helvetica', 'normal')
+      doc.text(`Monthly Transactional Report — ${monthLabel}`, pw / 2, 22, { align: 'center' })
+      doc.setFontSize(8)
+      doc.text(`Generated: ${new Date().toLocaleString('en-PH')}`, pw / 2, 30, { align: 'center' })
+      doc.setTextColor(0, 0, 0)
+
+      let curY = 42
+
+      const section = (title: string, count: number) => {
+        if (curY > 240) { doc.addPage(); curY = 16 }
+        doc.setFont('helvetica', 'bold')
+        doc.setFontSize(10)
+        doc.setTextColor(...slate)
+        doc.text(`${title}  (${count} record${count !== 1 ? 's' : ''})`, 14, curY)
+        doc.setTextColor(0, 0, 0)
+        doc.setFont('helvetica', 'normal')
+        curY += 2
+      }
+
+      const tableOpts = (head: string[][], body: string[][], totRow?: string[]) => {
+        autoTable(doc, {
+          startY: curY,
+          head,
+          body: body.length > 0 ? body : [Array(head[0].length).fill('—')],
+          ...(totRow ? { foot: [totRow], footStyles: { fillColor: [248, 250, 252], textColor: [30, 30, 30], fontStyle: 'bold' } } : {}),
+          theme: 'striped',
+          headStyles: { fillColor: amber, textColor: 255, fontSize: 8 },
+          bodyStyles: { fontSize: 8 },
+          margin: { left: 14, right: 14 },
+        })
+        curY = (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8
+      }
+
+      // --- Sales ---
+      const sales = s.data ?? []
+      section('Sales', sales.length)
+      tableOpts(
+        [['Date', 'Branch', 'Notes', 'Amount']],
+        sales.map(r => { const rr = r as unknown as {date:string;amount:number;notes:string|null;branches:{name:string}|null}; return [rr.date, rr.branches?.name ?? '—', rr.notes ?? '—', formatCurrency(Number(rr.amount))] }),
+        sales.length > 0 ? ['', '', 'Total', formatCurrency(sales.reduce((acc, r) => acc + Number(r.amount), 0))] : undefined,
+      )
+
+      // --- Expenses ---
+      const expenses = e.data ?? []
+      section('Expenses', expenses.length)
+      tableOpts(
+        [['Date', 'Branch', 'Category', 'Notes', 'Amount']],
+        expenses.map(r => { const rr = r as unknown as {date:string;amount:number;notes:string|null;category:string;branches:{name:string}|null}; return [rr.date, rr.branches?.name ?? '—', rr.category ?? '—', rr.notes ?? '—', formatCurrency(Number(rr.amount))] }),
+        expenses.length > 0 ? ['', '', '', 'Total', formatCurrency(expenses.reduce((acc, r) => acc + Number(r.amount), 0))] : undefined,
+      )
+
+      // --- Branch Orders ---
+      const orders = bo.data ?? []
+      section('Branch Orders', orders.length)
+      tableOpts(
+        [['Date', 'Item', 'Qty', 'From', 'To', 'Amount', 'Status']],
+        orders.map(o => {
+          const oo = o as unknown as {date:string;item:string;quantity:number|null;amount:number|null;status:string;from_branch:{name:string}|null;to_branch:{name:string}|null}
+          return [oo.date, oo.item, String(oo.quantity ?? '—'), oo.from_branch?.name ?? '—', oo.to_branch?.name ?? '—', oo.amount ? formatCurrency(Number(oo.amount)) : '—', oo.status ?? '—']
+        }),
+      )
+
+      // --- Salary Payments ---
+      const salary = sp.data ?? []
+      section('Salary Payments', salary.length)
+      tableOpts(
+        [['Date', 'Employee', 'Notes', 'Amount']],
+        salary.map(r => {
+          const rr = r as unknown as {date:string;amount:number;notes:string|null;employees:{name:string}|null}
+          return [rr.date, rr.employees?.name ?? '—', rr.notes ?? '—', formatCurrency(Number(rr.amount))]
+        }),
+        salary.length > 0 ? ['', '', 'Total', formatCurrency(salary.reduce((acc, r) => acc + Number(r.amount), 0))] : undefined,
+      )
+
+      // --- Receivables ---
+      const receivables = r.data ?? []
+      section('Receivables', receivables.length)
+      tableOpts(
+        [['Date', 'Branch', 'Description', 'Amount']],
+        receivables.map(r2 => {
+          const rr = r2 as unknown as {date:string;amount:number;description:string;branches:{name:string}|null}
+          return [rr.date, rr.branches?.name ?? '—', rr.description ?? '—', formatCurrency(Number(rr.amount))]
+        }),
+        receivables.length > 0 ? ['', '', 'Total', formatCurrency(receivables.reduce((acc, r2) => acc + Number(r2.amount), 0))] : undefined,
+      )
+
+      // --- Inventory Logs ---
+      const logs = il.data ?? []
+      section('Inventory Logs', logs.length)
+      tableOpts(
+        [['Date', 'Item', 'Action', 'Qty Change', 'By']],
+        logs.map(l => {
+          const ll = l as {created_at:string;item_name:string;action:string;quantity_change:number|null;changed_by:string|null}
+          return [ll.created_at?.slice(0, 10), ll.item_name ?? '—', ll.action ?? '—', String(ll.quantity_change ?? '—'), ll.changed_by ?? '—']
+        }),
+      )
+
+      doc.save(`Kamayan_Report_${monthLabel.replace(' ', '_')}.pdf`)
+      toast.success(`Report exported: ${monthLabel}`)
+    } catch (err) {
+      console.error(err)
+      toast.error('Failed to export PDF')
+    } finally {
+      setExporting(false)
     }
   }
 
@@ -361,17 +519,103 @@ export function SettingsPage() {
               </div>
             </div>
 
-            <Button
-              variant="destructive"
-              size="sm"
-              disabled={clearTables.length === 0}
-              onClick={() => { setClearConfirmText(''); setClearConfirmOpen(true) }}
-            >
-              <Trash2 className="w-4 h-4 mr-1" />
-              Clear {MONTHS[clearMonth - 1]} {clearYear} Data
-            </Button>
+            <div className="flex gap-2 flex-wrap">
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-amber-400 text-amber-700 hover:bg-amber-50"
+                disabled={exporting}
+                onClick={handleExportPDF}
+              >
+                {exporting ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <FileDown className="w-4 h-4 mr-1" />}
+                Export {MONTHS[clearMonth - 1]} {clearYear} PDF
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                disabled={clearTables.length === 0}
+                onClick={() => { setClearConfirmText(''); setClearConfirmOpen(true) }}
+              >
+                <Trash2 className="w-4 h-4 mr-1" />
+                Clear {MONTHS[clearMonth - 1]} {clearYear} Data
+              </Button>
+            </div>
+
+            {/* Inventory clearing */}
+            <div className="border-t border-red-100 pt-4 mt-2">
+              <p className="text-xs font-medium text-slate-600 mb-2">Clear Inventory Items:</p>
+              <div className="grid grid-cols-2 gap-2 mb-3">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={invClearItems.inventory}
+                    onChange={() => setInvClearItems(prev => ({ ...prev, inventory: !prev.inventory }))}
+                    className="w-3.5 h-3.5 accent-red-500"
+                  />
+                  <span className="text-sm text-slate-700">Stock List</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={invClearItems.inventory_cost_entries}
+                    onChange={() => setInvClearItems(prev => ({ ...prev, inventory_cost_entries: !prev.inventory_cost_entries }))}
+                    className="w-3.5 h-3.5 accent-red-500"
+                  />
+                  <span className="text-sm text-slate-700">Items Cost Entries</span>
+                </label>
+              </div>
+              <Button
+                variant="destructive"
+                size="sm"
+                disabled={!invClearItems.inventory && !invClearItems.inventory_cost_entries}
+                onClick={() => { setInvClearConfirmText(''); setInvClearConfirmOpen(true) }}
+              >
+                <Trash2 className="w-4 h-4 mr-1" />
+                Clear Selected Inventory
+              </Button>
+            </div>
           </CardContent>
         </Card>
+
+      {/* Inventory clear confirm dialog */}
+      {invClearConfirmOpen && (
+        <Dialog open onOpenChange={() => setInvClearConfirmOpen(false)}>
+          <DialogContent className="sm:max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="text-red-700">Clear Inventory Data</DialogTitle>
+              <p className="text-sm text-slate-500 mt-1">
+                This will permanently delete all records from the selected inventory tables. This cannot be undone.
+              </p>
+            </DialogHeader>
+            <div className="space-y-4 mt-2">
+              <div className="bg-red-50 rounded-lg border border-red-200 px-3 py-2 text-xs text-red-700 space-y-0.5">
+                {invClearItems.inventory && <p>• Stock List (all inventory items)</p>}
+                {invClearItems.inventory_cost_entries && <p>• Items Cost Entries (all cost log records)</p>}
+              </div>
+              <div className="space-y-1.5">
+                <Label>Type <span className="font-bold text-slate-800">DELETE</span> to confirm</Label>
+                <Input
+                  value={invClearConfirmText}
+                  onChange={e => setInvClearConfirmText(e.target.value)}
+                  placeholder="DELETE"
+                  autoFocus
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" className="flex-1" onClick={() => setInvClearConfirmOpen(false)}>Cancel</Button>
+                <Button
+                  variant="destructive"
+                  className="flex-1"
+                  disabled={invClearConfirmText !== 'DELETE' || invClearing}
+                  onClick={handleClearInventory}
+                >
+                  {invClearing ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Yes, Delete'}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {/* Clear confirm dialog */}
       {clearConfirmOpen && (
