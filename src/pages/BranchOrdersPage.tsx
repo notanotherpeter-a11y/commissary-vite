@@ -4,10 +4,12 @@ import { API_BASE } from '@/lib/api'
 import { PageHeader } from '@/components/page-header'
 import { KpiCard } from '@/components/kpi-card'
 import { formatDate, MONTHS, getCurrentMonthYear } from '@/lib/utils'
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
 import { cn } from '@/lib/utils'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
-import { CheckCircle, XCircle, Clock, AlertTriangle, ShoppingBag, Truck } from 'lucide-react'
+import { CheckCircle, XCircle, Clock, AlertTriangle, ShoppingBag, Truck, FileDown } from 'lucide-react'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import type { BranchOrder, Branch } from '@/types'
@@ -149,6 +151,56 @@ export function BranchOrdersPage() {
     : branchCosts.filter(bc => String(bc.branch.id) === costBranchFilter)
 
   const grandTotal = branchCosts.reduce((s, bc) => s + bc.total, 0)
+
+  async function handleBranchPDF(bc: { branch: { id: number; name: string }; total: number; count: number; orders: typeof allPeriodOrders }) {
+    const monthLabel = `${MONTHS[month - 1]} ${year}`
+    const amber: [number, number, number] = [245, 158, 11]
+    const doc = new jsPDF()
+    const pw = doc.internal.pageSize.getWidth()
+
+    doc.setFillColor(245, 158, 11)
+    doc.rect(0, 0, pw, 36, 'F')
+    doc.setTextColor(255, 255, 255)
+    doc.setFontSize(18)
+    doc.setFont('helvetica', 'bold')
+    doc.text(bc.branch.name, pw / 2, 13, { align: 'center' })
+    doc.setFontSize(11)
+    doc.setFont('helvetica', 'normal')
+    doc.text(`Branch Orders — ${monthLabel}`, pw / 2, 22, { align: 'center' })
+    doc.setFontSize(8)
+    doc.text(`Generated: ${new Date().toLocaleString('en-PH')}`, pw / 2, 30, { align: 'center' })
+    doc.setTextColor(0, 0, 0)
+
+    let curY = 44
+    doc.setFillColor(255, 251, 235)
+    doc.setDrawColor(245, 158, 11)
+    doc.roundedRect(14, curY, pw - 28, 14, 2, 2, 'FD')
+    doc.setFontSize(9)
+    doc.setFont('helvetica', 'bold')
+    doc.text(`Total Cost: ₱${bc.total.toLocaleString('en-PH', { minimumFractionDigits: 2 })}   |   Orders: ${bc.count}`, 20, curY + 9)
+    curY += 20
+
+    const sortedOrders = [...bc.orders].sort((a, b) => a.date.localeCompare(b.date))
+    autoTable(doc, {
+      startY: curY,
+      head: [['Date', 'Item', 'Qty', 'Unit Price', 'Amount']],
+      body: sortedOrders.map(o => [
+        formatDate(o.date),
+        o.item,
+        String(o.quantity ?? '—'),
+        o.unit_price ? `₱${Number(o.unit_price).toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '—',
+        o.amount ? `₱${Number(o.amount).toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '—',
+      ]),
+      foot: [['', 'TOTAL', '', '', `₱${bc.total.toLocaleString('en-PH', { minimumFractionDigits: 2 })}`]],
+      footStyles: { fillColor: [248, 250, 252], textColor: [30, 30, 30], fontStyle: 'bold' },
+      theme: 'striped',
+      headStyles: { fillColor: amber, textColor: 255, fontSize: 8 },
+      bodyStyles: { fontSize: 8 },
+      margin: { left: 14, right: 14 },
+    })
+
+    doc.save(`${bc.branch.name.replace(/\s+/g, '_')}_Orders_${monthLabel.replace(' ', '_')}.pdf`)
+  }
 
   return (
     <div>
@@ -407,11 +459,21 @@ export function BranchOrdersPage() {
                         <p className="text-xs text-slate-500">{bc.count} approved order{bc.count !== 1 ? 's' : ''}</p>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <p className="text-xs text-slate-500">Total Cost</p>
-                      <p className="text-lg font-bold text-amber-600">
-                        {'₱'}{bc.total.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
-                      </p>
+                    <div className="flex items-center gap-3">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="border-amber-400 text-amber-700 hover:bg-amber-50 text-xs h-7 px-2"
+                        onClick={() => handleBranchPDF(bc)}
+                      >
+                        <FileDown className="w-3.5 h-3.5 mr-1" /> PDF
+                      </Button>
+                      <div className="text-right">
+                        <p className="text-xs text-slate-500">Total Cost</p>
+                        <p className="text-lg font-bold text-amber-600">
+                          {'₱'}{bc.total.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                        </p>
+                      </div>
                     </div>
                   </div>
 

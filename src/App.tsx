@@ -29,6 +29,23 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+// Redirects to the right landing page based on role
+function RoleRedirect() {
+  const { role, user } = useAuth()
+  if (role === 'branch') {
+    const branchSlug = user?.user_metadata?.branch
+    return <Navigate to={branchSlug ? `/branches/${branchSlug}` : '/notifications'} replace />
+  }
+  return <Navigate to="/dashboard" replace />
+}
+
+// Blocks branch users from admin/investor-only pages
+function AdminRoute({ children }: { children: React.ReactNode }) {
+  const { role } = useAuth()
+  if (role === 'branch') return <Navigate to="/" replace />
+  return <>{children}</>
+}
+
 export default function App() {
   const { session, loading } = useAuth()
 
@@ -40,21 +57,21 @@ export default function App() {
 
   return (
     <Routes>
-      <Route path="/login" element={session ? <Navigate to="/dashboard" replace /> : <LoginPage />} />
+      <Route path="/login" element={session ? <RoleRedirect /> : <LoginPage />} />
       <Route path="/" element={<ProtectedRoute><AppShell /></ProtectedRoute>}>
-        <Route index element={<Navigate to="/dashboard" replace />} />
-        <Route path="dashboard" element={<DashboardPage />} />
-        <Route path="sales" element={<SalesPage />} />
-        <Route path="branch-sales" element={<BranchSalesPage />} />
-        <Route path="expenses" element={<ExpensesPage />} />
-        <Route path="salary" element={<SalaryPage />} />
-        <Route path="inventory" element={<InventoryPage />} />
-        <Route path="receivables" element={<ReceivablesPage />} />
-        <Route path="reports" element={<ReportsPage />} />
-        <Route path="branch-orders" element={<BranchOrdersPage />} />
-        <Route path="notifications" element={<NotificationsPage />} />
-        <Route path="settings" element={<SettingsPage />} />
-        <Route path="net-cost" element={<NetCostPage />} />
+        <Route index element={<RoleRedirect />} />
+        <Route path="dashboard"     element={<AdminRoute><DashboardPage /></AdminRoute>} />
+        <Route path="sales"         element={<AdminRoute><SalesPage /></AdminRoute>} />
+        <Route path="branch-sales"  element={<AdminRoute><BranchSalesPage /></AdminRoute>} />
+        <Route path="expenses"      element={<AdminRoute><ExpensesPage /></AdminRoute>} />
+        <Route path="salary"        element={<AdminRoute><SalaryPage /></AdminRoute>} />
+        <Route path="inventory"     element={<AdminRoute><InventoryPage /></AdminRoute>} />
+        <Route path="receivables"   element={<AdminRoute><ReceivablesPage /></AdminRoute>} />
+        <Route path="reports"       element={<AdminRoute><ReportsPage /></AdminRoute>} />
+        <Route path="branch-orders" element={<AdminRoute><BranchOrdersPage /></AdminRoute>} />
+        <Route path="net-cost"      element={<AdminRoute><NetCostPage /></AdminRoute>} />
+        <Route path="settings"      element={<AdminRoute><SettingsPage /></AdminRoute>} />
+        <Route path="notifications" element={<AdminRoute><NotificationsPage /></AdminRoute>} />
         <Route path="branches/:slug" element={<BranchPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/dashboard" replace />} />

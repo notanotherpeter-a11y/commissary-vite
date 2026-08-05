@@ -6,7 +6,7 @@ import { formatDate } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { Plus, Pencil, Trash2, Search, LayoutGrid, List, AlertTriangle, History, ShoppingCart, ClipboardList, RotateCcw } from 'lucide-react'
+import { Plus, Pencil, Trash2, Search, LayoutGrid, List, AlertTriangle, History, ShoppingCart, ClipboardList } from 'lucide-react'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import type { Branch, InventoryItem } from '@/types'
 import { AddInventoryModal } from '@/components/modals/AddInventoryModal'
@@ -110,73 +110,6 @@ export function InventoryPage() {
     }, 5000)
   }
 
-  async function revertItem(item: InventoryItem) {
-    // Fetch the most recent log entry for this item (any action)
-    const { data: allLogs } = await supabase
-      .from('inventory_logs')
-      .select('snapshot, action, created_at')
-      .eq('inventory_id', item.id)
-      .order('created_at', { ascending: false })
-      .limit(1)
-
-    const latest = allLogs?.[0]
-    if (!latest) {
-      toast.error('No history found for this item')
-      return
-    }
-
-    // If the last action was 'added' with no snapshot → undo by deleting the item
-    if (latest.action === 'added' && !latest.snapshot) {
-      await supabase.from('inventory_logs').insert({
-        inventory_id: item.id,
-        item_name: item.name,
-        action: 'deleted',
-        old_quantity: Number(item.quantity),
-        note: 'Reverted — item removed (undo add)',
-        changed_by: 'admin',
-        snapshot: { ...item },
-      })
-      const { error } = await supabase.from('inventory').delete().eq('id', item.id)
-      if (error) { toast.error('Failed to revert: ' + error.message); return }
-      toast.success(`"${item.name}" removed — add reverted`)
-      fetchItems()
-      return
-    }
-
-    const snap = latest.snapshot as Record<string, unknown> | null
-    if (!snap) {
-      toast.error('No previous state found — make an edit first')
-      return
-    }
-
-    const { error } = await supabase.from('inventory').update({
-      name: snap.name,
-      category: snap.category,
-      unit: snap.unit,
-      quantity: snap.quantity,
-      price: snap.price,
-      stock_price: snap.stock_price,
-      notes: snap.notes ?? null,
-      date: snap.date ?? null,
-      updated_at: new Date().toISOString(),
-    }).eq('id', item.id)
-
-    if (error) { toast.error('Failed to revert: ' + error.message); return }
-
-    await supabase.from('inventory_logs').insert({
-      inventory_id: item.id,
-      item_name: String(snap.name ?? item.name),
-      action: 'updated',
-      old_quantity: Number(item.quantity),
-      new_quantity: Number(snap.quantity ?? 0),
-      note: 'Reverted to previous state',
-      changed_by: 'admin',
-      snapshot: { ...item },
-    })
-
-    toast.success(`"${item.name}" reverted to previous state`)
-    fetchItems()
-  }
 
   const allFiltered = items.filter(i => i.id !== pendingDeleteId && (i.name.toLowerCase().includes(search.toLowerCase()) || i.category.toLowerCase().includes(search.toLowerCase())))
   // Branches only see items that have a unit price set
@@ -316,7 +249,6 @@ export function InventoryPage() {
                         {isAdmin && (
                           <>
                             <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-500" title="View history" onClick={() => setHistoryItem(item as InventoryItem & { branches?: { name: string } })}><History className="w-3.5 h-3.5" /></Button>
-                            <Button variant="ghost" size="icon" className="h-7 w-7 text-sky-500 hover:text-sky-700 hover:bg-sky-50" title="Revert to previous state" onClick={() => revertItem(item)}><RotateCcw className="w-3.5 h-3.5" /></Button>
                             <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditing(item)}><Pencil className="w-3.5 h-3.5" /></Button>
                             <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500" onClick={() => deleteItem(item)}><Trash2 className="w-3.5 h-3.5" /></Button>
                           </>
@@ -355,7 +287,6 @@ export function InventoryPage() {
                   {isAdmin && (
                     <>
                       <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-500" onClick={() => setHistoryItem(item as InventoryItem & { branches?: { name: string } })}><History className="w-3 h-3" /></Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-sky-500 hover:text-sky-700 hover:bg-sky-50" title="Revert to previous state" onClick={() => revertItem(item)}><RotateCcw className="w-3 h-3" /></Button>
                       <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditing(item)}><Pencil className="w-3 h-3" /></Button>
                       <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500" onClick={() => deleteItem(item)}><Trash2 className="w-3 h-3" /></Button>
                     </>
@@ -463,21 +394,21 @@ export function InventoryPage() {
                                 <TableCell className="font-medium">{entry.item_name}</TableCell>
                                 <TableCell><Badge variant="secondary">{entry.category ?? '—'}</Badge></TableCell>
                                 <TableCell className="text-sm text-slate-500">{entry.unit ?? '—'}</TableCell>
-                                <TableCell className="text-right">{entry.quantity}</TableCell>
+                                <TableCell className={`text-right font-semibold ${Number(entry.quantity) < 0 ? 'text-red-500' : 'text-slate-900'}`}>{entry.quantity}</TableCell>
                                 <TableCell className="text-right text-blue-600">
-                                  {stockPrice > 0 ? fmt(stockPrice) : '—'}
+                                  {stockPrice !== 0 ? fmt(stockPrice) : '—'}
                                 </TableCell>
-                                <TableCell className="text-right font-semibold text-blue-700">
-                                  {totalCost > 0 ? fmt(totalCost) : '—'}
+                                <TableCell className={`text-right font-semibold ${totalCost < 0 ? 'text-red-500' : 'text-blue-700'}`}>
+                                  {totalCost !== 0 ? fmt(totalCost) : '—'}
                                 </TableCell>
                                 <TableCell className="text-right text-slate-700">
-                                  {unitPrice > 0 ? fmt(unitPrice) : '—'}
+                                  {unitPrice !== 0 ? fmt(unitPrice) : '—'}
                                 </TableCell>
-                                <TableCell className="text-right font-semibold text-slate-900">
-                                  {totalValue > 0 ? fmt(totalValue) : '—'}
+                                <TableCell className={`text-right font-semibold ${totalValue < 0 ? 'text-red-500' : 'text-slate-900'}`}>
+                                  {totalValue !== 0 ? fmt(totalValue) : '—'}
                                 </TableCell>
                                 <TableCell className={`text-right font-semibold ${profit > 0 ? 'text-green-600' : profit < 0 ? 'text-red-500' : 'text-slate-400'}`}>
-                                  {unitPrice > 0 && stockPrice > 0 ? fmt(profit) : '—'}
+                                  {(unitPrice !== 0 && stockPrice !== 0) ? fmt(profit) : '—'}
                                 </TableCell>
                               </TableRow>
                             )

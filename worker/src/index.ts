@@ -6,6 +6,7 @@ export interface Env {
   SUPABASE_URL: string
   SUPABASE_ANON_KEY: string
   SUPABASE_SERVICE_ROLE_KEY: string
+  RESEND_API_KEY: string
 }
 
 const app = new Hono<{ Bindings: Env }>()
@@ -262,18 +263,17 @@ app.post('/api/inventory/adjust', async (c) => {
     changed_by: (auth.user.user_metadata?.username as string) ?? 'admin',
   })
 
-  const costInsert = mode === 'add'
-    ? db.from('inventory_cost_entries').insert({
-        item_name: item.name,
-        category: item.category,
-        unit: item.unit,
-        quantity: Number(amount),
-        stock_price: Number(price),      // cost price entered by user
-        price: Number(unitPrice),        // selling price entered by user
-        notes: null,
-        date: today,
-      })
-    : Promise.resolve()
+  const costInsert = db.from('inventory_cost_entries').insert({
+    item_name: item.name,
+    category: item.category,
+    unit: item.unit,
+    // add = positive qty, subtract = negative qty (deduction record)
+    quantity: mode === 'add' ? Number(amount) : -Number(amount),
+    stock_price: mode === 'add' ? Number(price) : Number(item.stock_price),
+    price: mode === 'add' ? Number(unitPrice) : Number(item.price),
+    notes: mode === 'subtract' ? 'Stock deducted' : null,
+    date: today,
+  })
 
   await Promise.all([logInsert, costInsert])
 
@@ -423,6 +423,59 @@ app.delete('/api/admin/clear-month-data', async (c) => {
 
   const total = Object.values(results).reduce((s, n) => s + n, 0)
   return c.json({ success: true, deleted: results, total })
+})
+
+// POST /api/orders/notify
+// Called by branch frontend after a new order is submitted — sends email alert to admin
+app.post('/api/orders/notify', async (c) => {
+  const body = await c.req.json().catch(() => ({}))
+  const { item, quantity, branchName, notes } = body as {
+    item?: string
+    quantity?: number
+    branchName?: string
+    notes?: string
+  }
+
+  if (!item || !quantity || !branchName) {
+    return c.json({ error: 'Missing required fields: item, quantity, branchName' }, 400)
+  }
+
+  const subject = `🛒 New Order — ${branchName}`
+  const html = `
+    <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;background:#f9f9f9;border-radius:8px;">
+      <h2 style="color:#1a1a1a;margin-bottom:4px;">New Branch Order</h2>
+      <p style="color:#555;margin-top:0;margin-bottom:20px;">A branch has submitted a new commissary order.</p>
+      <table style="width:100%;border-collapse:collapse;">
+        <tr><td style="padding:8px 12px;background:#fff;border:1px solid #e5e5e5;font-weight:600;width:120px;">Branch</td><td style="padding:8px 12px;background:#fff;border:1px solid #e5e5e5;">${branchName}</td></tr>
+        <tr><td style="padding:8px 12px;background:#f5f5f5;border:1px solid #e5e5e5;font-weight:600;">Item</td><td style="padding:8px 12px;background:#f5f5f5;border:1px solid #e5e5e5;">${item}</td></tr>
+        <tr><td style="padding:8px 12px;background:#fff;border:1px solid #e5e5e5;font-weight:600;">Quantity</td><td style="padding:8px 12px;background:#fff;border:1px solid #e5e5e5;">${quantity}</td></tr>
+        ${notes ? `<tr><td style="padding:8px 12px;background:#f5f5f5;border:1px solid #e5e5e5;font-weight:600;">Notes</td><td style="padding:8px 12px;background:#f5f5f5;border:1px solid #e5e5e5;">${notes}</td></tr>` : ''}
+      </table>
+      <p style="margin-top:20px;font-size:13px;color:#888;">Log in to <a href="https://www.kamayanresto.com" style="color:#1d4ed8;">kamayanresto.com</a> to approve or reject this order.</p>
+    </div>
+  `
+
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${c.env.RESEND_API_KEY}`,
+    },
+    body: JSON.stringify({
+      from: 'Kamayan Commissary <noreply@kamayanresto.com>',
+      to: ['raf.robinsons@yahoo.com'],
+      subject,
+      html,
+    }),
+  })
+
+  if (!res.ok) {
+    const err = await res.text()
+    console.error('Resend error:', err)
+    return c.json({ error: 'Failed to send email' }, 500)
+  }
+
+  return c.json({ success: true })
 })
 
 export default app

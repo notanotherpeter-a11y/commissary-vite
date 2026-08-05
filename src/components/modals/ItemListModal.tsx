@@ -68,7 +68,7 @@ export function ItemListModal({ onClose, onCostChanged }: Props) {
       })
       const json = await res.json()
       if (!res.ok) toast.error(json.error ?? 'Failed to adjust stock')
-      else { toast.success(json.message); setAdjust(null); fetchItems(); if (adjust?.mode === 'add') onCostChanged?.() }
+      else { toast.success(json.message); setAdjust(null); fetchItems(); onCostChanged?.() }
     } catch { toast.error('Network error — please try again') }
     setSaving(false)
   }

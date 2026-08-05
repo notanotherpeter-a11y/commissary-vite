@@ -9,6 +9,7 @@ import { Loader2 } from 'lucide-react'
 import type { Expense } from '@/types'
 import { EXPENSE_CATEGORIES } from '@/types'
 import { toast } from 'sonner'
+import { enqueue } from '@/lib/offline-queue'
 
 const COMMISSARY_ID = 6
 
@@ -47,11 +48,17 @@ export function AddExpenseModal({ initial, onClose, onSaved }: Props) {
     let error
     if (initial) {
       ({ error } = await supabase.from('expenses').update(payload).eq('id', initial.id))
+      if (error) toast.error('Failed to save: ' + error.message)
+      else { toast.success('Expense updated'); onSaved() }
+    } else if (!navigator.onLine) {
+      enqueue({ table: 'expenses', payload })
+      toast.success('Expense saved — will sync when back online', { icon: '📋' })
+      onSaved()
     } else {
       ({ error } = await supabase.from('expenses').insert(payload))
+      if (error) toast.error('Failed to save: ' + error.message)
+      else { toast.success('Expense added'); onSaved() }
     }
-    if (error) toast.error('Failed to save: ' + error.message)
-    else { toast.success(initial ? 'Expense updated' : 'Expense added'); onSaved() }
     setSaving(false)
   }
 

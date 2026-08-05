@@ -297,6 +297,7 @@ export function SettingsPage() {
         const r = await fetch(`${API_BASE}/api/admin/list-users`, {
           headers: { Authorization: `Bearer ${token}` },
         })
+        if (!r.ok) throw new Error(`API error ${r.status}`)
         const d = await r.json()
         if (d.users) {
           const sorted = sortUsers(d.users)
@@ -309,6 +310,8 @@ export function SettingsPage() {
           })
           setUsers(deduped)
         }
+      } catch (err) {
+        toast.error('Could not load users: ' + String(err))
       } finally {
         setLoading(false)
       }
@@ -338,17 +341,6 @@ export function SettingsPage() {
     if (data.error) toast.error('Failed: ' + data.error)
     else { toast.success(`Password updated for ${getUserMeta(editing.email, editing.role, editing.branch).username}`); setEditing(null) }
     setSaving(false)
-  }
-
-  function openAdd() {
-    setNewUsername('')
-    setNewDomain('@kamayan.app')
-    setNewRole('branch')
-    setNewBranch('')
-    setNewPassword('')
-    setNewConfirm('')
-    setShowNewPw(false)
-    setAddOpen(true)
   }
 
   async function handleAdd() {
@@ -381,11 +373,6 @@ export function SettingsPage() {
     }
   }
 
-  function openDelete(u: AuthUser) {
-    setDeleting(u)
-    setConfirmDelete('')
-  }
-
   async function handleDelete() {
     if (!deleting) return
     try {
@@ -411,11 +398,6 @@ export function SettingsPage() {
       <PageHeader
         title="Settings"
         description="Manage users and system configuration"
-        action={
-          <Button size="sm" onClick={openAdd} className="bg-amber-500 hover:bg-amber-600 text-black">
-            Add User
-          </Button>
-        }
       />
 
       <div className="space-y-6 max-w-2xl">
@@ -448,15 +430,6 @@ export function SettingsPage() {
                         title="Change password"
                       >
                         <Pencil className="w-3.5 h-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 shrink-0 text-red-400 hover:text-red-600 hover:bg-red-50"
-                        onClick={() => openDelete(u)}
-                        title="Delete user"
-                      >
-                        <span className="text-xs">✕</span>
                       </Button>
                     </div>
                   )

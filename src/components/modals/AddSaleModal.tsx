@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { enqueue } from '@/lib/offline-queue'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -36,15 +37,16 @@ export function AddSaleModal({ defaultBranchId, initial, onClose, onSaved }: Pro
     let error
     if (initial) {
       ({ error } = await supabase.from('sales').update(payload).eq('id', initial.id))
+      if (error) toast.error('Failed to save: ' + error.message)
+      else { toast.success('Sale updated'); onSaved() }
+    } else if (!navigator.onLine) {
+      enqueue({ table: 'sales', payload })
+      toast.success('Sale saved — will sync when back online', { icon: '📋' })
+      onSaved()
     } else {
       ({ error } = await supabase.from('sales').insert(payload))
-    }
-
-    if (error) {
-      toast.error('Failed to save: ' + error.message)
-    } else {
-      toast.success(initial ? 'Sale updated' : 'Sale added')
-      onSaved()
+      if (error) toast.error('Failed to save: ' + error.message)
+      else { toast.success('Sale added'); onSaved() }
     }
     setSaving(false)
   }

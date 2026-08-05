@@ -3,11 +3,12 @@ import { useAuth } from '@/lib/auth-context'
 import {
   LayoutDashboard, TrendingUp, Store, ShoppingBag,
   Receipt, Users, Package, Wallet, BarChart3,
-  Settings, Bell, Building2, LogOut, Menu, ChevronDown, ChevronRight
+  Settings, Bell, Building2, LogOut, Menu, ChevronDown, ChevronRight, WifiOff
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 import { supabase } from '@/lib/supabase'
+import { useOfflineSync } from '@/hooks/useOfflineSync'
 
 const NAV_ITEMS = [
   { label: 'Dashboard',       path: '/dashboard',     icon: LayoutDashboard, roles: ['admin', 'investor'] },
@@ -19,7 +20,7 @@ const NAV_ITEMS = [
   { label: 'Inventory',       path: '/inventory',      icon: Package,         roles: ['admin', 'investor'] },
   { label: 'Receivables',     path: '/receivables',    icon: Wallet,          roles: ['admin', 'investor'] },
   { label: 'Reports',         path: '/reports',        icon: BarChart3,       roles: ['admin', 'investor'] },
-  { label: 'Notifications',   path: '/notifications',  icon: Bell,            roles: ['admin', 'investor', 'branch'] },
+  { label: 'Notifications',   path: '/notifications',  icon: Bell,            roles: ['admin', 'investor'] },
   { label: 'Settings',        path: '/settings',       icon: Settings,        roles: ['admin'] },
 ]
 
@@ -36,6 +37,19 @@ export function AppShell() {
   const [branchesOpen, setBranchesOpen] = useState(false)
   const [branches, setBranches] = useState<Branch[]>([])
   const [notifCount, setNotifCount] = useState(0)
+  const [isOnline, setIsOnline] = useState(navigator.onLine)
+  const { pendingCount } = useOfflineSync()
+
+  useEffect(() => {
+    const goOnline  = () => setIsOnline(true)
+    const goOffline = () => setIsOnline(false)
+    window.addEventListener('online',  goOnline)
+    window.addEventListener('offline', goOffline)
+    return () => {
+      window.removeEventListener('online',  goOnline)
+      window.removeEventListener('offline', goOffline)
+    }
+  }, [])
 
   const visibleNav = NAV_ITEMS.filter(item => role && item.roles.includes(role))
   const isAdminOrInvestor = role === 'admin' || role === 'investor'
@@ -232,6 +246,24 @@ export function AppShell() {
           <img src="/kamayan-logo.png" alt="Kamayan" className="w-8 h-8 object-contain" />
           <span className="text-sm font-semibold text-slate-800">Kamayan</span>
         </div>
+
+        {!isOnline && (
+          <div className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white text-sm font-medium shrink-0">
+            <WifiOff className="w-4 h-4 shrink-0" />
+            <span>No internet connection — expenses and sales will sync when you're back online.</span>
+            {pendingCount > 0 && (
+              <span className="ml-auto shrink-0 bg-white/20 text-white text-xs font-bold px-2 py-0.5 rounded-full">
+                {pendingCount} pending
+              </span>
+            )}
+          </div>
+        )}
+        {isOnline && pendingCount > 0 && (
+          <div className="flex items-center gap-2 px-4 py-2 bg-amber-500 text-black text-sm font-medium shrink-0">
+            <span className="animate-pulse">⏳</span>
+            <span>Syncing {pendingCount} offline item{pendingCount > 1 ? 's' : ''}…</span>
+          </div>
+        )}
 
         <main className="flex-1 overflow-y-auto p-4 md:p-6">
           <Outlet />

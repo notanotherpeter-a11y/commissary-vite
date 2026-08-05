@@ -21,6 +21,7 @@ export function AddOrderModal({ toBranchId, toBranchName, onClose, onSaved }: Pr
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([])
   const [loadingItems, setLoadingItems] = useState(true)
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null)
+  const [search, setSearch] = useState('')
   const [quantity, setQuantity] = useState('1')
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
   const [notes, setNotes] = useState('')
@@ -52,8 +53,23 @@ export function AddOrderModal({ toBranchId, toBranchName, onClose, onSaved }: Pr
       notes: notes || null,
       status: 'pending',
     })
-    if (error) toast.error('Failed: ' + error.message)
-    else { toast.success('Order submitted — pending admin approval'); onSaved() }
+    if (error) {
+      toast.error('Failed: ' + error.message)
+    } else {
+      toast.success('Order submitted — pending admin approval')
+      // Fire-and-forget email notification to admin
+      fetch('https://commissary-api.notanotherpeter.workers.dev/api/orders/notify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          item: selectedItem.name,
+          quantity: qty,
+          branchName: toBranchName,
+          notes: notes || undefined,
+        }),
+      }).catch(() => {}) // silently ignore failures
+      onSaved()
+    }
     setSaving(false)
   }
 
@@ -74,8 +90,10 @@ export function AddOrderModal({ toBranchId, toBranchName, onClose, onSaved }: Pr
             ) : inventoryItems.length === 0 ? (
               <p className="text-sm text-slate-500 py-2">No inventory items available.</p>
             ) : (
+              <>
+              <Input placeholder="Search items…" value={search} onChange={e => setSearch(e.target.value)} className="mb-2" />
               <div className="border rounded-lg max-h-48 overflow-y-auto divide-y">
-                {inventoryItems.map(item => (
+                {inventoryItems.filter(item => item.name.toLowerCase().includes(search.toLowerCase()) || (item.category ?? '').toLowerCase().includes(search.toLowerCase())).map(item => (
                   <button
                     key={item.id}
                     type="button"
@@ -93,6 +111,7 @@ export function AddOrderModal({ toBranchId, toBranchName, onClose, onSaved }: Pr
                   </button>
                 ))}
               </div>
+              </>
             )}
             {selectedItem && (
               <div className="text-xs text-amber-700 font-medium space-y-0.5">

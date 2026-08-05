@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Button } from '@/components/ui/button'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Badge } from '@/components/ui/badge'
+
 import { AddExpenseModal } from '@/components/modals/AddExpenseModal'
 import type { Branch, Expense } from '@/types'
 import { EXPENSE_CATEGORIES } from '@/types'
@@ -30,7 +30,6 @@ export function ExpensesPage() {
   const [year, setYear] = useState(now.year)
   const [branches, setBranches] = useState<Branch[]>([])
   const [categoryFilter, setCategoryFilter] = useState('all')
-  const [branchFilter, setBranchFilter] = useState('all')
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [loading, setLoading] = useState(true)
   const [showAdd, setShowAdd] = useState(false)
@@ -42,24 +41,20 @@ export function ExpensesPage() {
     })
   }, [])
 
-  const userBranch = userMeta.role === 'branch' ? branches.find(b => b.slug === userMeta.branch) : null
-
   const fetchData = useCallback(async () => {
     setLoading(true)
     const lastDay = new Date(year, month, 0).getDate()
     const start = `${year}-${String(month).padStart(2, '0')}-01`
     const end = `${year}-${String(month).padStart(2, '0')}-${lastDay}`
-    let query = supabase.from('expenses').select('*, branches(id,slug,name)').gte('date', start).lte('date', end).order('date', { ascending: false })
-    if (userBranch) query = query.eq('branch_id', userBranch.id)
-    else if (branchFilter !== 'all') {
-      const b = branches.find(x => x.slug === branchFilter)
-      if (b) query = query.eq('branch_id', b.id)
-    }
+    // Always locked to commissary branch
+    const commissary = branches.find(b => (b.slug as string) === 'commissary')
+    let query = supabase.from('expenses').select('*').gte('date', start).lte('date', end).order('date', { ascending: false })
+    if (commissary) query = query.eq('branch_id', commissary.id)
     if (categoryFilter !== 'all') query = query.eq('category', categoryFilter)
     const { data } = await query
     setExpenses(data ?? [])
     setLoading(false)
-  }, [month, year, branchFilter, categoryFilter, userBranch, branches])
+  }, [month, year, categoryFilter, branches])
 
   useEffect(() => { fetchData() }, [fetchData])
 
@@ -100,15 +95,6 @@ export function ExpensesPage() {
           <SelectTrigger className="w-24 h-8 text-sm"><SelectValue /></SelectTrigger>
           <SelectContent>{years.map(y => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}</SelectContent>
         </Select>
-        {userMeta.role !== 'branch' && (
-          <Select value={branchFilter} onValueChange={(v) => setBranchFilter(v ?? '')}>
-            <SelectTrigger className="w-36 h-8 text-sm"><SelectValue placeholder="All branches" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Branches</SelectItem>
-              {branches.map(b => <SelectItem key={b.slug} value={b.slug}>{b.name}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        )}
         <Select value={categoryFilter} onValueChange={(v) => setCategoryFilter(v ?? '')}>
           <SelectTrigger className="w-36 h-8 text-sm"><SelectValue placeholder="All categories" /></SelectTrigger>
           <SelectContent>
@@ -128,7 +114,6 @@ export function ExpensesPage() {
           <TableHeader>
             <TableRow className="bg-slate-50">
               <TableHead>Date</TableHead>
-              <TableHead>Branch</TableHead>
               <TableHead>Category</TableHead>
               <TableHead>Description</TableHead>
               <TableHead className="text-right">Amount</TableHead>
@@ -137,13 +122,13 @@ export function ExpensesPage() {
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableRow><TableCell colSpan={6} className="text-center py-8 text-slate-500">Loading…</TableCell></TableRow>
+              <TableRow><TableCell colSpan={5} className="text-center py-8 text-slate-500">Loading…</TableCell></TableRow>
             ) : expenses.length === 0 ? (
-              <TableRow><TableCell colSpan={6} className="text-center py-8 text-slate-500">No expenses for this period.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={5} className="text-center py-8 text-slate-500">No expenses for this period.</TableCell></TableRow>
             ) : expenses.map(exp => (
               <TableRow key={exp.id}>
                 <TableCell className="text-sm">{formatDate(exp.date)}</TableCell>
-                <TableCell><Badge variant="secondary">{(exp as Expense & { branches?: { name: string } }).branches?.name}</Badge></TableCell>
+
                 <TableCell>
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${CATEGORY_COLORS[exp.category] || 'bg-slate-100 text-slate-700'}`}>{exp.category}</span>
                 </TableCell>

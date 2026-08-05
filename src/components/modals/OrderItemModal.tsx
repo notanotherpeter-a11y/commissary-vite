@@ -35,8 +35,23 @@ export function OrderItemModal({ item, userBranch, onClose, onSaved }: Props) {
       notes: notes || null,
       status: 'pending',
     })
-    if (error) toast.error('Failed: ' + error.message)
-    else { toast.success('Order submitted — pending admin approval'); onSaved() }
+    if (error) {
+      toast.error('Failed: ' + error.message)
+    } else {
+      toast.success('Order submitted — pending admin approval')
+      // Fire-and-forget email notification to admin
+      fetch('https://commissary-api.notanotherpeter.workers.dev/api/orders/notify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          item: item.name,
+          quantity: Number(quantity),
+          branchName: userBranch.name,
+          notes: notes || undefined,
+        }),
+      }).catch(() => {}) // silently ignore failures
+      onSaved()
+    }
     setSaving(false)
   }
 
